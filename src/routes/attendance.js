@@ -5,6 +5,7 @@ import { validateAttendance, checkMonth, monthRange } from '../lib/validate.js';
 import { uuid } from '../lib/crypto.js';
 import { nowIso } from '../lib/time.js';
 import { auditStmt, staffLabel } from '../lib/audit.js';
+import { OVERLAP_SQL, overlapBinds, absSpan, findOverlap, overlapMessage } from '../lib/overlap.js';
 
 export function checkRequestId(v) {
   if (v == null || v === '') return null;
@@ -13,15 +14,21 @@ export function checkRequestId(v) {
   return s;
 }
 
-/** 勤怠記録1件を追加する文（row_order は末尾） */
-export function insertAttendanceStmt(env, rec) {
-  return env.DB.prepare(
+/**
+ * 勤怠記録1件を追加する文（row_order は末尾）。
+ * noOverlap: true なら、同じ人の勤務時間帯と重なる記録があるときは追加しない（判定と追加が1つの文なので同時送信でも確実）。
+ */
+export function insertAttendanceStmt(env, rec, { noOverlap = false } = {}) {
+  const guard = noOverlap ? `AND NOT EXISTS (SELECT 1 FROM attendance a WHERE ${OVERLAP_SQL})` : '';
+  const stmt = env.DB.prepare(
     `INSERT INTO attendance
        (id, staff_id, staff_name, work_date, start_time, end_time, break_min, task, allowance, hours,
         method, row_order, client_request_id, source, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(row_order), 0) + 1 FROM attendance), ?, 'app', ?, ?)
+     SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT COALESCE(MAX(row_order), 0) + 1 FROM attendance), ?, 'app', ?, ?
+      WHERE 1 ${guard}
      ON CONFLICT DO NOTHING`
-  ).bind(
+  );
+  const binds = [
     rec.id,
     rec.staffId,
     rec.staffName,
@@ -35,8 +42,10 @@ export function insertAttendanceStmt(env, rec) {
     rec.method,
     rec.requestId ?? null,
     rec.at,
-    rec.at
-  );
+    rec.at,
+  ];
+  if (noOverlap) binds.push(...overlapBinds(rec.staffId, rec.date, absSpan(rec.date, rec.start, rec.end)));
+  return stmt.bind(...binds);
 }
 
 /** 再送された申請（同じ requestId）なら、最初に保存した記録を返す */
@@ -64,7 +73,7 @@ export async function saveAttendance(env, request) {
   const at = nowIso();
   const rec = { id, staffId: u.id, staffName: u.name, ...v, method: 'manual', requestId, at };
   await env.DB.batch([
-    insertAttendanceStmt(env, rec),
+    insertAttendanceStmt(env, rec, { noOverlap: true }),
     auditStmt(env, {
       action: '勤怠申請',
       recordId: id,
@@ -78,6 +87,8 @@ export async function saveAttendance(env, request) {
     // 同時に同じ requestId で送られた場合：先に保存された方を返す
     const again = await findByRequestId(env, u.id, requestId);
     if (again) return json(again);
+    const clash = await findOverlap(env, u.id, v.date, v.start, v.end);
+    if (clash) throw new HttpError(409, overlapMessage(clash) + '。時刻を確認してください');
     throw new HttpError(500, '保存を確認できませんでした。勤務履歴を確認してから再度お試しください');
   }
   // 集計は保存とは別処理（集計は取得時に計算するため、ここでは更新不要）

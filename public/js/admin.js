@@ -199,7 +199,34 @@ const FIELDS = [
   ['allowance', '手当(円)'],
   ['hours', '勤務時間'],
 ];
+async function loadClockedIn() {
+  const { staff } = await get('/api/admin/clocked-in');
+  $('clockedList').replaceChildren(
+    staff.length
+      ? h(
+          'table',
+          { class: 'grid small' },
+          h('thead', {}, h('tr', {}, ['スタッフ', '出勤した日時', '経過', ''].map(x => h('th', {}, x)))),
+          h(
+            'tbody',
+            {},
+            staff.map(s =>
+              h(
+                'tr',
+                {},
+                h('td', {}, `${s.grade}年 ${s.name}${s.nick ? '（' + s.nick + '）' : ''}`),
+                h('td', { class: 'c' }, fmtDT(s.startedAt)),
+                h('td', { class: 'num' + (s.hours >= 12 ? ' error' : '') }, `${s.hours}時間${s.hours >= 12 ? ' ⚠️ 退勤忘れ？' : ''}`),
+                h('td', { class: 'c' }, h('button', { type: 'button', class: 'danger', onclick: () => cancelClock({ id: s.id, name: s.name, clockStartedAt: s.startedAt }) }, '出勤を取消'))
+              )
+            )
+          )
+        )
+      : '出勤中のスタッフはいません。'
+  );
+}
 loaders.corrections = async () => {
+  loadClockedIn().catch(e => toast(e.message));
   const status = $('corrStatus').value;
   const { requests } = await get('/api/admin/corrections?status=' + encodeURIComponent(status));
   if (status === '申請中') $('pendingCount').textContent = requests.length || '';
@@ -509,7 +536,8 @@ function cancelClock(s) {
   form(`出勤状態の取消：${s.name}`, [{ type: 'info', text: `${fmtDT(s.clockStartedAt)} からの出勤中の状態を取り消します（勤怠記録は作られません）。必要なら「勤怠記録」から正しい記録を追加してください。` }], async () => {
     await post(`/api/admin/staff/${encodeURIComponent(s.id)}/cancel-clock`);
     toast('取り消しました');
-    await loaders.staff();
+    await loadClockedIn().catch(() => {});
+    if (!$('tab-staff').hidden) await loaders.staff();
   }, '取り消す');
 }
 

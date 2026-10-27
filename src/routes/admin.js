@@ -473,3 +473,23 @@ export async function changeOwnPassword(env, request) {
   ]);
   return json({ ok: true });
 }
+
+/** 出勤中のスタッフ一覧（退勤忘れの確認用）。出勤からの経過時間の長い順 */
+export async function clockedIn(env, request) {
+  await requireAdmin(env, request);
+  const { results } = await env.DB.prepare(
+    `SELECT c.staff_id, c.started_at, s.name, s.nick, s.grade
+       FROM clock_sessions c JOIN staff s ON s.id = c.staff_id ORDER BY c.started_at`
+  ).all();
+  const now = Date.now();
+  return json({
+    staff: results.map(r => ({
+      id: String(r.staff_id),
+      name: r.name,
+      nick: r.nick,
+      grade: String(r.grade),
+      startedAt: r.started_at,
+      hours: Math.round(((now - new Date(r.started_at).getTime()) / 3600000) * 10) / 10,
+    })),
+  });
+}

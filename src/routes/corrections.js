@@ -6,6 +6,7 @@ import { validateAttendance } from '../lib/validate.js';
 import { uuid } from '../lib/crypto.js';
 import { nowIso } from '../lib/time.js';
 import { staffLabel } from '../lib/audit.js';
+import { findOverlap, overlapMessage } from '../lib/overlap.js';
 
 export const REASON_MAX = 300;
 
@@ -38,6 +39,8 @@ export async function submitCorrection(env, request) {
     .bind(String(body.recordId || ''), u.id)
     .first();
   if (!r) throw new HttpError(404, '対象の勤務記録が見つかりません');
+  const clash = await findOverlap(env, u.id, v.date, v.start, v.end, r.id);
+  if (clash) throw new HttpError(409, overlapMessage(clash) + '。修正後の時刻を確認してください');
   const before = recordSnapshot(r);
   const after = {
     date: v.date,
@@ -99,4 +102,36 @@ export async function submitDeletion(env, request) {
   ]);
   if (!ins.meta || ins.meta.changes !== 1) throw new HttpError(409, 'この記録には審査待ちの申請があります');
   return json({ requestId: id, status: '申請中' });
+}
+
+/** 自分の修正・削除申請の一覧（新しい順・最大50件）。結果と管理者メモを確認できる */
+export async function myRequests(env, request) {
+  const u = await requireStaff(env, request);
+  assertSelf(u, new URL(request.url).searchParams.get('staffId'));
+  const { results } = await env.DB.prepare(
+    `SELECT id, requested_at, record_id, before_json, after_json, reason, status, processed_at, admin_memo, kind
+       FROM correction_requests WHERE staff_id = ? ORDER BY requested_at DESC LIMIT 50`
+  )
+    .bind(u.id)
+    .all();
+  const parse = t => {
+    try {
+      return JSON.parse(t);
+    } catch {
+      return null;
+    }
+  };
+  return json({
+    requests: results.map(r => ({
+      id: r.id,
+      kind: r.kind || '修正',
+      requestedAt: r.requested_at,
+      before: parse(r.before_json),
+      after: parse(r.after_json),
+      reason: r.reason,
+      status: r.status,
+      processedAt: r.processed_at,
+      memo: r.admin_memo || '',
+    })),
+  });
 }

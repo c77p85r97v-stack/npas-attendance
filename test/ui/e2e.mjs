@@ -16,7 +16,10 @@ mkdirSync(out, { recursive: true });
 const env = await createDevEnv(':memory:');
 env.LOG_TIMING = 'false';
 await resetTestData(env, new Request('http://localhost/api/test/reset?samples=0'));
-let offsetMs = 0; // サーバーの時計をずらす（退勤の確認用）
+// サーバーの時計をずらす：出勤は「今日の 19:00（日本時間）」に固定（手動申請の 09:00〜12:30 と重ならないように）
+const todayJst = new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+const at19 = new Date(`${todayJst}T19:00:00+09:00`).getTime();
+let offsetMs = at19 - Date.now();
 env.__clock = () => new Date(Date.now() + offsetMs);
 const server = await startServer(env, 0);
 const BASE = `http://localhost:${server.address().port}`;
@@ -56,7 +59,7 @@ await check('出勤打刻 → 勤務状況が「出勤中」になる', async ()
   await page.waitForFunction(() => /出勤中です/.test(document.getElementById('statusText').textContent));
 });
 await check('退勤打刻（2時間15分後）：退勤画面で休憩・内容を入力して確定', async () => {
-  offsetMs = (2 * 60 + 15) * 60 * 1000;
+  offsetMs = at19 - Date.now() + (2 * 60 + 15) * 60 * 1000;
   await page.click('#clockOut');
   await page.waitForSelector('#checkout.active');
   await page.waitForFunction(() => /^\d\d:\d\d$/.test(document.getElementById('checkoutStarted').textContent));
@@ -141,6 +144,11 @@ await check('打刻修正申請：記録を選び、修正内容と理由を送�
   await page.fill('#fixReason', '退勤時刻を間違えた');
   await page.click('#sendCorrection');
   await page.waitForFunction(() => /申請を受け付けました/.test(document.getElementById('correctionMessage').textContent));
+  // 自分の申請の結果
+  await page.click('#loadMyRequests');
+  await page.waitForSelector('#myRequests .entry');
+  assert.match(await page.textContent('#myRequests'), /修正申請：09:00〜12:30 → 09:00〜13:00.*申請中/);
+  await page.screenshot({ path: join(out, 'my-requests.png'), fullPage: true });
   await page.click('#corrections .back');
 });
 await check('ログアウト → ログイン画面へ戻り、操作できなくなる', async () => {
@@ -164,6 +172,9 @@ await check('管理画面：ログイン（パスワード違いは拒否）', a
   await admin.fill('#password', 'test-password-1234');
   await admin.click('#loginBtn');
   await admin.waitForSelector('#appView:not([hidden])');
+});
+await check('管理画面：出勤中のスタッフ一覧（退勤忘れの確認）', async () => {
+  await admin.waitForFunction(() => /出勤中のスタッフはいません/.test(document.getElementById('clockedList').textContent));
 });
 await check('管理画面：修正申請を承認すると記録が変わる', async () => {
   await admin.waitForSelector('.req');

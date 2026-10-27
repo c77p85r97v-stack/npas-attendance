@@ -4,28 +4,15 @@
 // 判定と登録は1つのSQL文で行うため、同時に申請されても重複登録されない。
 import { json, readJson, HttpError } from '../lib/http.js';
 import { requireStaff, assertSelf } from '../lib/auth.js';
-import { validateAttendance, minutesBetween } from '../lib/validate.js';
+import { validateAttendance } from '../lib/validate.js';
+import { ABS_START, ABS_END, absSpan, overlapMessage } from '../lib/overlap.js';
 import { uuid } from '../lib/crypto.js';
 import { nowIso } from '../lib/time.js';
 import { staffLabel } from '../lib/audit.js';
 
 export const BULK_MAX = 100;
 
-// 勤務時間帯を「2000-01-01 からの通算分」で表す（日付をまたぐ勤務も1本の時間帯になる）
-// 例：10/31 22:00〜02:00 → 10/31 22:00 から 11/1 02:00 まで
-const START_MIN = `(CAST(substr(a.start_time, 1, 2) AS INTEGER) * 60 + CAST(substr(a.start_time, 4, 2) AS INTEGER))`;
-const END_MIN = `(CAST(substr(a.end_time, 1, 2) AS INTEGER) * 60 + CAST(substr(a.end_time, 4, 2) AS INTEGER))`;
-const DAY_MIN = `(CAST(julianday(a.work_date) - julianday('2000-01-01') AS INTEGER) * 1440)`;
-export const ABS_START = `(${DAY_MIN} + ${START_MIN})`;
-export const ABS_END = `(${DAY_MIN} + ${START_MIN} + ((${END_MIN} - ${START_MIN} + 1440) % 1440))`;
 
-export function absSpan(date, start, end) {
-  const [y, m, d] = date.split('-').map(Number);
-  const day = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2000, 0, 1)) / 86400000);
-  const [h, mi] = start.split(':').map(Number);
-  const s = day * 1440 + h * 60 + mi;
-  return { start: s, end: s + minutesBetween(start, end) };
-}
 
 export async function saveBulk(env, request) {
   const startedAt = Date.now();
@@ -104,9 +91,7 @@ export async function saveBulk(env, request) {
       saved.push({ id: r.sid, name: r.name, recordId: r.id });
       continue;
     }
-    const c = clash.get(r.sid);
-    const when = c ? `（${c.work_date.slice(5).replace('-', '/')} ${c.start_time}〜${c.end_time}）` : '';
-    skipped.push({ id: r.sid, name: r.name, reason: `勤務時間が重なる記録が既にあります${when}` });
+    skipped.push({ id: r.sid, name: r.name, reason: overlapMessage(clash.get(r.sid)) });
   }
 
   // 代表者の操作履歴。失敗しても保存済みの勤怠は取り消さない（旧仕様と同じ）

@@ -55,7 +55,7 @@ out.push(await measure('スタッフ一覧（ログイン画面）', () => staff
 out.push(await measure('ログイン（PIN照合）', () => new Client(env).post('/api/login', { staffId: 'S002', pin: '2468' }), 10));
 out.push(await measure('出勤状態の取得', () => staff.get('/api/clock/status')));
 out.push(await measure('月別履歴（1人・1か月）', () => staff.get('/api/history?month=2025-06')));
-out.push(await measure('通常の勤怠申請（保存）', i => staff.post('/api/attendance', { date: '2026-10-05', start: '10:00', end: '15:00', breakMin: '0', task: 'bench' + i, allowance: '' })));
+out.push(await measure('通常の勤怠申請（保存・重なりチェック込み）', i => staff.post('/api/attendance', { date: `2028-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`, start: '10:00', end: '15:00', breakMin: '0', task: 'bench' + i, allowance: '' })));
 out.push(await measure('出勤→退勤（2回の通信の合計）', async () => {
   await staff.post('/api/clock/in');
   return staff.post('/api/clock/out', { breakMin: '0', task: '' }).then(r => (r.status === 400 ? { status: 200 } : r));
@@ -64,6 +64,8 @@ const ids = Array.from({ length: 100 }, (_, i) => 'S' + String(i + 1).padStart(3
 out.push(await measure('一括勤怠申請（100名）', i => staff.post('/api/bulk', { staffIds: ids, date: `2027-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`, start: '10:00', end: '15:00', breakMin: '0' }), 10));
 out.push(await measure('月別集計（全員・1か月）', () => admin.get('/api/admin/summary?month=2025-06')));
 out.push(await measure('月別集計CSV（全員・全月）', () => admin.get('/api/admin/summary.csv?month=all'), 5));
+out.push(await measure('自分の申請の結果', () => staff.get('/api/my/requests')));
+out.push(await measure('出勤中のスタッフ一覧', () => admin.get('/api/admin/clocked-in')));
 out.push(await measure('個人別勤怠申請書（1人・1か月）', () => admin.get('/api/admin/personal?staffId=S001&month=2025-06')));
 
 console.log(`勤怠 ${N.toLocaleString()} 件・スタッフ ${STAFF} 名（ローカル模擬環境 / Node ${process.version}）`);

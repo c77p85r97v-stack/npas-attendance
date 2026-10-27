@@ -1,7 +1,7 @@
 // 管理者APIのテスト（ローカル模擬環境）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { setup, loginAs, adminClient, Client, base } from './helpers.mjs';
+import { setup, loginAs, adminClient, Client, base, jst } from './helpers.mjs';
 
 test('管理者ログイン：パスワードが違えば拒否、スタッフのCookieでは管理者APIを使えない', async () => {
   const env = await setup();
@@ -386,4 +386,40 @@ test('サーバー側の動作確認：名前だけのログイン方式でも�
   const env = createTestEnv({ AUTH_MODE: 'name' });
   const r = await new Client(env).get('/api/test/selfcheck');
   assert.equal(r.data.fail, 0, JSON.stringify(r.data.results.filter(x => !x.ok)));
+});
+
+test('自分の申請の結果：本人の申請だけ・状態と管理者メモが見える', async () => {
+  const env = await setup();
+  const s = await loginAs(env, 'S001');
+  const o = await loginAs(env, 'S002');
+  const { data: r1 } = await s.post('/api/attendance', base({ date: '2026-10-01' }));
+  const { data: r2 } = await s.post('/api/attendance', base({ date: '2026-10-02' }));
+  const { data: q1 } = await s.post('/api/corrections', { recordId: r1.id, input: base({ date: '2026-10-01', end: '16:00' }), reason: '退勤ミス' });
+  await s.post('/api/corrections/delete', { recordId: r2.id, reason: '不要' });
+  const { data: o1 } = await o.post('/api/attendance', base());
+  await o.post('/api/corrections/delete', { recordId: o1.id, reason: '他人' });
+  const a = await adminClient(env);
+  await a.post(`/api/admin/corrections/${q1.requestId}/reject`, { memo: '元の時刻が正しいです' });
+  const mine = (await s.get('/api/my/requests')).data.requests;
+  assert.equal(mine.length, 2);
+  const rej = mine.find(x => x.kind === '修正');
+  assert.deepEqual([rej.status, rej.memo, rej.after.end], ['却下', '元の時刻が正しいです', '16:00']);
+  assert.equal(mine.find(x => x.kind === '削除').status, '申請中');
+  assert.equal((await s.get('/api/my/requests?staffId=S002')).status, 403);
+  assert.equal((await new Client(env).get('/api/my/requests')).status, 401);
+});
+
+test('出勤中のスタッフ一覧（退勤忘れの確認）：経過時間の長い順', async () => {
+  let now = jst(2026, 10, 5, 8, 0);
+  const env = await setup({ clock: () => now });
+  const s1 = await loginAs(env, 'S001');
+  const s2 = await loginAs(env, 'S002');
+  await s1.post('/api/clock/in');
+  now = jst(2026, 10, 5, 9, 0);
+  await s2.post('/api/clock/in');
+  const a = await adminClient(env);
+  const r = await a.get('/api/admin/clocked-in');
+  assert.deepEqual(r.data.staff.map(x => x.id), ['S001', 'S002']);
+  assert.ok(r.data.staff[0].hours > 0);
+  assert.equal((await s1.get('/api/admin/clocked-in')).status, 401);
 });

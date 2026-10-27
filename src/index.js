@@ -30,6 +30,8 @@ const ROUTES = [
   ['POST', /^\/api\/bulk$/, (env, req) => bulk.saveBulk(env, req)],
   ['POST', /^\/api\/corrections$/, (env, req) => corr.submitCorrection(env, req)],
   ['POST', /^\/api\/corrections\/delete$/, (env, req) => corr.submitDeletion(env, req)],
+  ['GET', /^\/api\/my\/requests$/, (env, req) => corr.myRequests(env, req)],
+  ['GET', /^\/api\/my\/requests$/, (env, req) => corr.myRequests(env, req)],
 
   ['POST', /^\/api\/admin\/login$/, (env, req) => admin.login(env, req)],
   ['POST', /^\/api\/admin\/logout$/, (env, req) => admin.logout(env, req)],
@@ -39,6 +41,7 @@ const ROUTES = [
   ['GET', /^\/api\/admin\/admins$/, (env, req) => admin.listAdmins(env, req)],
   ['POST', /^\/api\/admin\/admins$/, (env, req) => admin.addAdmin(env, req)],
   ['POST', /^\/api\/admin\/password$/, (env, req) => admin.changeOwnPassword(env, req)],
+  ['GET', /^\/api\/admin\/clocked-in$/, (env, req) => admin.clockedIn(env, req)],
   ['GET', /^\/api\/admin\/corrections$/, (env, req) => admin.listCorrections(env, req)],
   ['POST', /^\/api\/admin\/corrections\/([\w-]+)\/approve$/, (env, req, m) => admin.approveCorrection(env, req, m[1])],
   ['POST', /^\/api\/admin\/corrections\/([\w-]+)\/reject$/, (env, req, m) => admin.rejectCorrection(env, req, m[1])],

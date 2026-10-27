@@ -129,7 +129,7 @@ test('通常の勤怠申請：同じ requestId の再送は二重登録しない
   assert.equal(r2.data.duplicate, true);
   assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 1);
   // 同時に送っても1件
-  const rs = await Promise.all([1, 2, 3, 4].map(() => a.post('/api/attendance', base({ requestId: 'req-abcdefgh' }))));
+  const rs = await Promise.all([1, 2, 3, 4].map(() => a.post('/api/attendance', base({ date: '2026-10-06', requestId: 'req-abcdefgh' }))));
   assert.equal(new Set(rs.map(r => r.data.id)).size, 1);
   assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 2);
 });
@@ -442,4 +442,49 @@ test('一括勤怠申請：日付をまたぐ勤務との重なりも判定す�
   assert.equal(r.saved.length, 1);
   r = await bulk({ date: '2026-10-31', start: '21:00', end: '22:01' });
   assert.equal(r.skipped.length, 1);
+});
+
+test('通常の勤怠申請：自分の記録と勤務時間が重なる申請は止める（接するだけ・別の人ならOK）', async () => {
+  const env = await setup();
+  const a = await loginAs(env, 'S001');
+  const b = await loginAs(env, 'S002');
+  assert.equal((await a.post('/api/attendance', base({ start: '10:00', end: '15:00' }))).status, 200);
+  const ng = await a.post('/api/attendance', base({ start: '14:59', end: '16:00' }));
+  assert.equal(ng.status, 409);
+  assert.equal(ng.data.error, '勤務時間が重なる記録が既にあります（10/05 10:00〜15:00）。時刻を確認してください');
+  assert.equal((await a.post('/api/attendance', base({ start: '15:00', end: '16:00' }))).status, 200); // 接するだけ
+  assert.equal((await b.post('/api/attendance', base({ start: '10:00', end: '15:00' }))).status, 200); // 別の人
+  // 日付をまたぐ勤務との重なり
+  assert.equal((await a.post('/api/attendance', base({ date: '2026-10-06', start: '22:00', end: '03:00' }))).status, 200);
+  assert.equal((await a.post('/api/attendance', base({ date: '2026-10-07', start: '02:00', end: '04:00' }))).status, 409);
+  // 同時に重なる申請を2つ送っても1件だけ
+  const rs = await Promise.all(['09:00', '09:30'].map(t => a.post('/api/attendance', base({ date: '2026-10-08', start: t, end: '12:00' }))));
+  assert.deepEqual(rs.map(r => r.status).sort(), [200, 409]);
+  assert.equal(await env.DB.prepare("SELECT COUNT(*) AS n FROM attendance WHERE staff_id = 'S001'").first('n'), 4);
+});
+
+test('退勤打刻：既存の記録と重なっても保存はし、注意を返す', async () => {
+  let now = jst(2026, 10, 5, 10, 0);
+  const env = await setup({ clock: () => now });
+  const a = await loginAs(env, 'S001');
+  await a.post('/api/attendance', base({ start: '11:00', end: '12:00' }));
+  await a.post('/api/clock/in');
+  now = jst(2026, 10, 5, 15, 0);
+  const r = await a.post('/api/clock/out', { breakMin: 0 });
+  assert.equal(r.status, 200);
+  assert.match(r.data.warning, /勤務時間が重なる記録が既にあります（10\/05 11:00〜12:00）/);
+  assert.equal((await a.get('/api/clock/status')).data.active, false);
+  // 重ならなければ注意なし
+  await a.post('/api/clock/in');
+  now = jst(2026, 10, 5, 17, 0);
+  assert.equal((await a.post('/api/clock/out', { breakMin: 0 })).data.warning, '');
+});
+
+test('打刻修正申請：修正後の時刻がほかの記録と重なる場合は止める（自分自身は除く）', async () => {
+  const env = await setup();
+  const a = await loginAs(env, 'S001');
+  const { data: r1 } = await a.post('/api/attendance', base({ start: '10:00', end: '12:00' }));
+  await a.post('/api/attendance', base({ start: '13:00', end: '15:00' }));
+  assert.equal((await a.post('/api/corrections', { recordId: r1.id, input: base({ start: '10:00', end: '13:30' }), reason: 'x' })).status, 409);
+  assert.equal((await a.post('/api/corrections', { recordId: r1.id, input: base({ start: '09:00', end: '12:30' }), reason: 'x' })).status, 200);
 });

@@ -62,6 +62,7 @@
       http('GET', '/api/history?staffId=' + encodeURIComponent(staffId) + '&month=' + encodeURIComponent(month)),
     npasSubmitCorrection: (staffId, recordId, input, reason) => http('POST', '/api/corrections', { staffId, recordId, input, reason }),
     npasSubmitDeletion: (staffId, recordId, reason) => http('POST', '/api/corrections/delete', { staffId, recordId, reason }),
+    npasMyRequests: staffId => http('GET', '/api/my/requests?staffId=' + encodeURIComponent(staffId)),
     npasSaveBulkAttendance: (operatorId, staffIds, input) =>
       http('POST', '/api/bulk', Object.assign({ operatorId, staffIds }, input)),
     // 月別集計は「表示するときに元データから計算する」方式になったため、保存後の集計更新は不要。

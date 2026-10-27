@@ -6,6 +6,7 @@ import { uuid } from '../lib/crypto.js';
 import { jstDate, jstTime, nowIso } from '../lib/time.js';
 import { auditStmt, staffLabel } from '../lib/audit.js';
 import { checkRequestId, findByRequestId, recordJson } from './attendance.js';
+import { findOverlap, overlapMessage } from '../lib/overlap.js';
 
 const DAY_MS = 86400000;
 
@@ -90,5 +91,8 @@ export async function clockOut(env, request, now = new Date()) {
     if (r) return json({ id: r.id, hours: r.hours, workDate: r.work_date, summaryUpdated: false, duplicate: true });
     throw new HttpError(409, '退勤を保存できませんでした。出勤状況を確認してください');
   }
-  return json({ id, hours: v.hours, workDate: v.date, summaryUpdated: false });
+  // 打刻は実際の時刻なので保存は止めない。ほかの記録と重なっていれば知らせる。
+  const clash = await findOverlap(env, u.id, v.date, v.start, v.end, id);
+  const warning = clash ? overlapMessage(clash) + '。打刻修正か削除申請で直してください' : '';
+  return json({ id, hours: v.hours, workDate: v.date, summaryUpdated: false, warning });
 }
