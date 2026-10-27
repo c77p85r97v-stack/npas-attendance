@@ -350,6 +350,26 @@ function personalSheet(d) {
   );
 }
 
+/**
+ * 印刷の前に、申請書1枚ずつが A4 1ページに収まるか測り、はみ出す場合だけ縮小する。
+ * （1日に何件も記録がある月などで、行が増えても2ページに分かれないように）
+ */
+const PRINT_MAX_PX = 1030; // A4 の高さ 297mm − 上下の余白 10mm×2 ≒ 1047px（少し余裕を見る）
+function fitSheetsForPrint() {
+  document.body.classList.add('printing');
+  document.querySelectorAll('#perSheet .sheet').forEach(el => {
+    el.style.zoom = '';
+    const hgt = el.getBoundingClientRect().height;
+    if (hgt > PRINT_MAX_PX) el.style.zoom = (PRINT_MAX_PX / hgt).toFixed(3);
+  });
+}
+function endPrint() {
+  document.body.classList.remove('printing');
+  document.querySelectorAll('#perSheet .sheet').forEach(el => (el.style.zoom = ''));
+}
+window.addEventListener('beforeprint', fitSheetsForPrint);
+window.addEventListener('afterprint', endPrint);
+
 function fillGradeOptions() {
   const grades = [...new Set(staffCache.filter(s => s.active).map(s => s.grade))].sort((a, b) => Number(b) - Number(a));
   const cur = $('perGrade').value;
@@ -378,7 +398,10 @@ $('perPrintGrade').onclick = async () => {
     }
     $('perSheet').replaceChildren(...r.sheets.map(personalSheet));
     $('perBatchNote').textContent = `${r.sheets.length}名分を表示しました（${month}）。印刷画面を開きます。`;
-    setTimeout(() => window.print(), 300);
+    setTimeout(() => {
+      fitSheetsForPrint();
+      window.print();
+    }, 300);
   } catch (e) {
     $('perBatchNote').textContent = 'エラー：' + e.message;
   } finally {
@@ -395,7 +418,10 @@ $('perNext').onclick = () => {
   $('perMonth').value = shiftMonth($('perMonth').value || thisMonth(), 1);
   loaders.personal();
 };
-$('perPrint').onclick = () => window.print();
+$('perPrint').onclick = () => {
+  fitSheetsForPrint();
+  window.print();
+};
 
 // ---------- 勤怠記録 ----------
 const recFields = e => [

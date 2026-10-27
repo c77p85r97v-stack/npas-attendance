@@ -16,7 +16,9 @@
     "deploy:staging": "wrangler deploy --env staging",
     "deploy:production": "wrangler deploy --env production",
     "backup:staging": "node tools/backup.mjs staging",
-    "backup:production": "node tools/backup.mjs production"
+    "backup:production": "node tools/backup.mjs production",
+    "test:print": "node test/ui/print-check.mjs",
+    "test:all": "npm test && node test/ui/e2e.mjs && node test/ui/print-check.mjs"
   },
   "engines": {
     "node": ">=22.5"
