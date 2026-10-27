@@ -84,7 +84,7 @@ body.printing .sheet h1{font-size:18px}
 body.printing .sheet .info{margin:2px 0;font-size:11px}
 body.printing .sheet .sub{font-size:9px;margin-bottom:4px}
 body.printing .sheet table{font-size:9.5px;line-height:1.25}
-body.printing .sheet th,.sheet td{padding:1px 4px;height:19px}
+body.printing .sheet th,body.printing .sheet td{padding:1px 4px;height:19px}
 body.printing .sheet .totals{margin-top:6px;grid-template-columns:1fr 110px 110px}
 body.printing .sheet .totals div{padding:3px}
 body.printing .sheet .totals .v{font-size:13px}
