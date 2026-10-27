@@ -16,7 +16,7 @@ enabled = true
 # ---------- テスト環境（動作確認用。本物のデータは入れない） ----------
 [env.staging]
 name = "npas-attendance-staging"
-vars = { ENVIRONMENT = "staging", ALLOW_TEST_TOOLS = "true", BULK_POLICY = "all" }
+vars = { ENVIRONMENT = "staging", ALLOW_TEST_TOOLS = "true", BULK_POLICY = "all", AUTH_MODE = "name" }
 
 [[env.staging.d1_databases]]
 binding = "DB"
@@ -27,7 +27,7 @@ migrations_dir = "migrations"
 # ---------- 本番環境 ----------
 [env.production]
 name = "npas-attendance"
-vars = { ENVIRONMENT = "production", ALLOW_TEST_TOOLS = "false", BULK_POLICY = "all" }
+vars = { ENVIRONMENT = "production", ALLOW_TEST_TOOLS = "false", BULK_POLICY = "all", AUTH_MODE = "name" }
 
 [[env.production.d1_databases]]
 binding = "DB"
@@ -35,6 +35,7 @@ database_name = "npas-attendance"
 database_id = "REPLACE_WITH_PRODUCTION_DATABASE_ID"
 migrations_dir = "migrations"
 
+# AUTH_MODE … name（名前を選ぶだけ）/ pin（名前＋PIN）
 # 秘密の値（ソースコードには書かない。README の手順で wrangler secret put で設定する）
 #   PIN_PEPPER        … PIN・パスワードのハッシュに混ぜる秘密の値（16文字以上）
 #   ADMIN_SETUP_TOKEN … 最初の管理者を作るときの合言葉（16文字以上）

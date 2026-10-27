@@ -29,6 +29,14 @@ function fakeBlob() {
       await delay();
       return { etag: store.get(path).etag };
     },
+    async list({ prefix }) {
+      await delay();
+      const blobs = [...store].filter(([k]) => k.startsWith(prefix)).map(([k, v]) => ({ pathname: k, url: 'blob://' + k, size: v.bytes.length, uploadedAt: new Date() }));
+      return { blobs, hasMore: false };
+    },
+    async del(urls) {
+      for (const u of [].concat(urls)) store.delete(u.replace('blob://', ''));
+    },
     async put(path, bytes, { allowOverwrite, ifMatch }) {
       await delay();
       const cur = store.get(path);
@@ -118,4 +126,38 @@ test('Vercel版：3つのインスタンスに同時に書き込んでも、取�
     assert.ok(h.data.entries.every(e => e.task === ids[i]), '他人の記録が混ざらない');
     assert.equal((await fresh('GET', '/api/clock/status')).data.active, true);
   }
+});
+
+test('Vercel版：テスト記録の初期化→バックアップから復元、毎日の自動バックアップ', async () => {
+  process.env.CRON_SECRET = 'cron-secret-0123456789abcdef';
+  const blob = fakeBlob();
+  const app = createApp(blob);
+  const c = client([app]);
+  await c('POST', '/api/login', { staffId: 'TEST01', pin: '1234' });
+  await c('POST', '/api/attendance', { date: '2025-05-05', start: '10:00', end: '15:00', breakMin: '0' });
+  const admin = client([app]);
+  await admin('POST', '/api/admin/login', { loginId: 'testadmin', password: 'test-password-1234' });
+  const r = await admin('POST', '/api/admin/reset-history', { confirm: '初期化' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.match(r.data.backup, /^\d{8}-\d{6}-before-reset$/);
+  const list = await admin('GET', '/api/admin/backups');
+  assert.ok(list.data.backups.some(b => b.name === r.data.backup));
+  // 初期化後は記録なし（新しいインスタンスでも）
+  const c2 = client([createApp(blob)]);
+  await c2('POST', '/api/login', { staffId: 'TEST01', pin: '1234' });
+  assert.equal((await c2('GET', '/api/history?month=2025-05')).data.entries.length, 0);
+  // 復元
+  assert.equal((await admin('POST', '/api/admin/backups/restore', { name: r.data.backup, confirm: 'いいえ' })).status, 400);
+  const rs = await admin('POST', '/api/admin/backups/restore', { name: r.data.backup, confirm: '復元' });
+  assert.equal(rs.status, 200, JSON.stringify(rs.data));
+  const c3 = client([createApp(blob)]);
+  await c3('POST', '/api/login', { staffId: 'TEST01', pin: '1234' });
+  assert.equal((await c3('GET', '/api/history?month=2025-05')).data.entries.length, 1);
+  // 毎日の自動バックアップ（合言葉がないと拒否）
+  const raw = async auth => app(() => new Request('https://npas.vercel.test/api/cron/backup', { headers: auth ? { Authorization: auth } : {} }));
+  assert.equal((await raw()).status, 401);
+  assert.equal((await raw('Bearer wrong')).status, 401);
+  const ok = await raw('Bearer cron-secret-0123456789abcdef');
+  assert.equal(ok.status, 200);
+  assert.ok([...blob.store.keys()].some(k => k.endsWith('-daily.sqlite')));
 });

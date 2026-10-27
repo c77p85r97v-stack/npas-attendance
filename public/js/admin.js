@@ -143,6 +143,9 @@ async function start() {
     $('loginView').hidden = true;
     $('appView').hidden = false;
     $('logoutBtn').hidden = false;
+    appConfig = await get('/api/config').catch(() => appConfig);
+    $('pinMissing').hidden = appConfig.authMode !== 'pin';
+    $('resetCard').hidden = false;
     await loadStaffOptions();
     openTab('corrections');
   } catch {
@@ -175,6 +178,7 @@ function openTab(name) {
 document.querySelectorAll('#tabs button').forEach(b => (b.onclick = () => openTab(b.dataset.tab)));
 
 let staffCache = [];
+let appConfig = { authMode: 'pin', backups: false };
 async function loadStaffOptions() {
   staffCache = (await get('/api/admin/staff')).staff;
   for (const id of ['perStaff', 'recStaff']) {
@@ -208,18 +212,19 @@ loaders.corrections = async () => {
     ...requests.map(r => {
       const b = r.before || {};
       const a = r.after || {};
-      const diff = h('div', { class: 'diff' }, h('b', {}, '項目'), h('b', {}, '変更前'), h('b', {}, '変更後（申請）'));
+      const isDelete = r.kind === '削除';
+      const diff = h('div', { class: 'diff' }, h('b', {}, '項目'), h('b', {}, isDelete ? '削除する記録' : '変更前'), h('b', {}, isDelete ? '' : '変更後（申請）'));
       for (const [k, label] of FIELDS) {
-        const changed = String(b[k] ?? '') !== String(a[k] ?? '');
-        diff.append(h('span', {}, label), h('span', { class: changed ? 'changed' : '' }, String(b[k] ?? '')), h('span', { class: changed ? 'changed' : '' }, String(a[k] ?? '')));
+        const changed = isDelete || String(b[k] ?? '') !== String(a[k] ?? '');
+        diff.append(h('span', {}, label), h('span', { class: changed ? 'changed' : '' }, String(b[k] ?? '')), h('span', { class: changed && !isDelete ? 'changed' : '' }, isDelete ? '' : String(a[k] ?? '')));
       }
       const tagClass = r.status === '申請中' ? 'pending' : r.status === '承認' ? 'done' : 'rej';
       const card = h(
         'div',
         { class: 'req' },
-        h('div', { class: 'head' }, h('div', {}, h('b', {}, r.name), ` (${r.staffId})　申請日時：${fmtDT(r.requestedAt)}`), h('span', { class: 'tag ' + tagClass }, r.status)),
+        h('div', { class: 'head' }, h('div', {}, h('span', { class: 'tag ' + (isDelete ? 'rej' : 'pending') }, isDelete ? '削除申請' : '修正申請'), ' ', h('b', {}, r.name), ` (${r.staffId})　申請日時：${fmtDT(r.requestedAt)}`), h('span', { class: 'tag ' + tagClass }, r.status)),
         diff,
-        h('div', {}, h('b', {}, '修正理由：'), r.reason),
+        h('div', {}, h('b', {}, isDelete ? '削除の理由：' : '修正理由：'), r.reason),
         r.status !== '申請中' ? h('div', { class: 'note' }, `処理：${fmtDT(r.processedAt)}　${r.processedBy || ''}　メモ：${r.memo || 'なし'}`) : null
       );
       if (r.status === '申請中') {
@@ -227,7 +232,7 @@ loaders.corrections = async () => {
           h(
             'div',
             { class: 'bar', style: 'margin:10px 0 0' },
-            h('button', { type: 'button', class: 'primary', onclick: () => decide(r, 'approve') }, '承認して記録を変更'),
+            h('button', { type: 'button', class: 'primary', onclick: () => decide(r, 'approve') }, isDelete ? '承認して記録を削除' : '承認して記録を変更'),
             h('button', { type: 'button', class: 'danger', onclick: () => decide(r, 'reject') }, '却下')
           )
         );
@@ -241,7 +246,7 @@ function decide(r, action) {
   form(
     approve ? '修正申請を承認' : '修正申請を却下',
     [
-      { type: 'info', text: approve ? `${r.name} さんの ${r.before?.date} の記録を、申請どおりに変更します。` : '記録は変更されません。' },
+      { type: 'info', text: approve ? (r.kind === '削除' ? `${r.name} さんの ${r.before?.date} ${r.before?.start}〜${r.before?.end} の記録を削除します。削除前の内容は操作履歴に残ります。` : `${r.name} さんの ${r.before?.date} の記録を、申請どおりに変更します。`) : '記録は変更されません。' },
       { name: 'memo', label: '管理者メモ（任意）', type: 'textarea' },
     ],
     async v => {
@@ -409,7 +414,7 @@ loaders.staff = async () => {
   await loadStaffOptions();
   loadAdmins().catch(e => toast(e.message));
   $('staffTable').replaceChildren(
-    h('thead', {}, h('tr', {}, ['スタッフID', '氏名', 'ニックネーム', '学年', '有効', 'PIN', '状態', ''].map(x => h('th', {}, x)))),
+    h('thead', {}, h('tr', {}, ['スタッフID', '氏名', 'ニックネーム', '学年', '有効', ...(pinMode() ? ['PIN'] : []), '状態', ''].map(x => h('th', {}, x)))),
     h(
       'tbody',
       {},
@@ -422,14 +427,14 @@ loaders.staff = async () => {
           h('td', {}, s.nick),
           h('td', { class: 'c' }, s.grade),
           h('td', { class: 'c' }, s.active ? '有効' : '無効'),
-          h('td', { class: 'c' }, s.hasPin ? '設定済み' : h('span', { class: 'warn' }, '未設定')),
+          pinMode() ? h('td', { class: 'c' }, s.hasPin ? '設定済み' : h('span', { class: 'warn' }, '未設定')) : null,
           h('td', {}, s.locked ? h('span', { class: 'error' }, 'ロック中 ') : null, s.clockedIn ? `出勤中（${fmtDT(s.clockStartedAt)}〜）` : ''),
           h(
             'td',
             { class: 'c' },
             h('button', { type: 'button', onclick: () => editStaff(s) }, '編集'),
             ' ',
-            h('button', { type: 'button', onclick: () => issuePin(s) }, s.hasPin ? 'PIN再発行' : 'PIN発行'),
+            pinMode() ? h('button', { type: 'button', onclick: () => issuePin(s) }, s.hasPin ? 'PIN再発行' : 'PIN発行') : null,
             s.locked ? h('button', { type: 'button', onclick: () => act(`/api/admin/staff/${s.id}/unlock`, 'ロックを解除しました') }, 'ロック解除') : null,
             s.clockedIn ? h('button', { type: 'button', class: 'danger', onclick: () => cancelClock(s) }, '出勤を取消') : null
           )
@@ -438,6 +443,7 @@ loaders.staff = async () => {
     )
   );
 };
+const pinMode = () => appConfig.authMode === 'pin';
 async function act(path, msg) {
   try {
     await post(path);
@@ -641,7 +647,90 @@ async function loadRuns() {
 $('migDry').onclick = () => migrate('dry-run');
 $('migImport').onclick = () => migrate('import');
 $('migVerify').onclick = () => migrate('verify');
-loaders.data = loadRuns;
+loaders.data = async () => {
+  await loadRuns();
+  const pv = await get('/api/admin/reset-history');
+  const c = pv.counts;
+  $('resetCounts').textContent = `現在の件数：勤怠記録 ${c.attendance}件・申請 ${c.requests}件・操作履歴 ${c.audit}件・出勤中 ${c.clockedIn}人`;
+  await loadBackups();
+};
+async function loadBackups() {
+  const r = await get('/api/admin/backups');
+  $('backupNow').hidden = !r.supported;
+  if (!r.supported) {
+    $('backupList').textContent = 'この環境では、Cloudflare D1 の Time Travel（自動の復元機能）を使います（README 7章）。';
+    return;
+  }
+  $('backupList').replaceChildren(
+    r.backups.length
+      ? h(
+          'table',
+          { class: 'grid small' },
+          h('thead', {}, h('tr', {}, ['名前', '日時', '大きさ', ''].map(x => h('th', {}, x)))),
+          h(
+            'tbody',
+            {},
+            r.backups.map(b =>
+              h(
+                'tr',
+                {},
+                h('td', {}, b.name),
+                h('td', {}, fmtDT(b.uploadedAt)),
+                h('td', { class: 'num' }, Math.ceil(b.size / 1024) + ' KB'),
+                h(
+                  'td',
+                  { class: 'c' },
+                  h('a', { class: 'button', href: '/api/admin/backups/download?name=' + encodeURIComponent(b.name) }, 'ダウンロード'),
+                  ' ',
+                  h('button', { type: 'button', class: 'danger', onclick: () => restore(b.name) }, 'この状態に戻す')
+                )
+              )
+            )
+          )
+        )
+      : 'まだありません。'
+  );
+}
+function restore(name) {
+  form(
+    'バックアップから元に戻す',
+    [
+      { type: 'info', text: `「${name}」の時点の状態に戻します。それ以降の記録は消えます（戻す前の状態も自動でバックアップします）。` },
+      { name: 'confirm', label: '確認のため「復元」と入力' },
+    ],
+    async v => {
+      const r = await post('/api/admin/backups/restore', { name, confirm: v.confirm });
+      toast(r.message);
+      await loaders.data();
+    },
+    '元に戻す'
+  );
+}
+$('backupNow').onclick = async () => {
+  try {
+    const r = await post('/api/admin/backups');
+    toast(`バックアップしました（${r.backup.name}）`);
+    await loadBackups();
+  } catch (e) {
+    toast(e.message);
+  }
+};
+$('resetBtn').onclick = async () => {
+  $('resetResult').textContent = '';
+  $('resetBtn').disabled = true;
+  try {
+    const r = await post('/api/admin/reset-history', { confirm: $('resetConfirm').value.trim() });
+    $('resetConfirm').value = '';
+    $('resetResult').textContent = r.message;
+    $('resetResult').className = 'ok';
+    await loaders.data();
+  } catch (e) {
+    $('resetResult').textContent = e.message;
+    $('resetResult').className = 'error';
+  } finally {
+    $('resetBtn').disabled = false;
+  }
+};
 $('backupBtn').onclick = async () => {
   $('backupBtn').disabled = true;
   try {

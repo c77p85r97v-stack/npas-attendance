@@ -76,10 +76,22 @@ export class D1Node {
     this.db.exec(sql);
     return { count: 1 };
   }
+  /** 未適用のマイグレーションだけを順に実行する（wrangler と同じ d1_migrations 表で記録） */
   applyMigrations() {
     const dir = join(ROOT, 'migrations');
+    this.db.exec('CREATE TABLE IF NOT EXISTS d1_migrations (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE, applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)');
+    const done = new Set(this.db.prepare('SELECT name FROM d1_migrations').all().map(r => r.name));
     for (const f of readdirSync(dir).filter(f => f.endsWith('.sql')).sort()) {
-      this.db.exec(readFileSync(join(dir, f), 'utf8'));
+      if (done.has(f)) continue;
+      this.db.exec('BEGIN');
+      try {
+        this.db.exec(readFileSync(join(dir, f), 'utf8'));
+        this.db.prepare('INSERT INTO d1_migrations (name) VALUES (?)').run(f);
+        this.db.exec('COMMIT');
+      } catch (e) {
+        this.db.exec('ROLLBACK');
+        throw e;
+      }
     }
     return this;
   }

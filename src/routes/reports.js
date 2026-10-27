@@ -226,6 +226,7 @@ function convertExport(sheet, results, offset = 0) {
     処理日時: r.processed_at || '',
     処理者: r.processed_by || '',
     管理者メモ: r.admin_memo || '',
+    種類: r.kind || '修正',
   }));
 }
 

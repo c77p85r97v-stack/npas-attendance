@@ -14,12 +14,17 @@ import worker from '../../src/index.js';
 import { resetTestData, testToolsEnabled } from '../../src/routes/testtools.js';
 
 const BLOB_PATH = 'npas/attendance.sqlite';
-const MAX_ATTEMPTS = 6;
+const BACKUP_PREFIX = 'npas/backups/';
+const SQLITE_TYPE = 'application/vnd.sqlite3';
+const MAX_ATTEMPTS = 12;
 
-function envFromProcess(db) {
+function envFromProcess(db, extra = {}) {
   const e = process.env;
   return {
+    ...extra,
     DB: db,
+    CRON_SECRET: e.CRON_SECRET,
+    AUTH_MODE: e.AUTH_MODE,
     ENVIRONMENT: e.ENVIRONMENT || 'staging',
     ALLOW_TEST_TOOLS: e.ALLOW_TEST_TOOLS || 'false',
     PIN_PEPPER: e.PIN_PEPPER,
@@ -34,7 +39,7 @@ function envFromProcess(db) {
  * 戻り値：Web 標準の Request を受け取り Response を返す関数
  */
 export function createApp(blob) {
-  const { get, put, head } = blob;
+  const { get, put, head, list, del } = blob;
   let state = null; // { etag, file, db, saved }
   let queue = Promise.resolve();
 
@@ -91,10 +96,73 @@ export function createApp(blob) {
     return /Precondition|already exists|412|409/i.test(s);
   }
   
+  const stamp = () => {
+    const d = new Date(Date.now() + 9 * 3600e3).toISOString();
+    return d.slice(0, 10).replace(/-/g, '') + '-' + d.slice(11, 19).replace(/:/g, '');
+  };
+  const validName = n => /^[\w-]{1,80}$/.test(String(n));
+
+  /** バックアップ機能（管理画面の「テスト記録の初期化」「バックアップ」から使う） */
+  function backupsApi(ctx) {
+    return {
+      async create(label) {
+        const name = `${stamp()}-${label}`;
+        await put(`${BACKUP_PREFIX}${name}.sqlite`, readFileSync(state.file), {
+          access: 'private',
+          addRandomSuffix: false,
+          allowOverwrite: true,
+          contentType: SQLITE_TYPE,
+        });
+        return { name };
+      },
+      async list() {
+        const out = [];
+        let cursor;
+        do {
+          const r = await list({ prefix: BACKUP_PREFIX, cursor, limit: 1000 });
+          for (const b of r.blobs) {
+            out.push({ name: b.pathname.slice(BACKUP_PREFIX.length).replace(/\.sqlite$/, ''), size: b.size, uploadedAt: b.uploadedAt, url: b.url });
+          }
+          cursor = r.hasMore ? r.cursor : undefined;
+        } while (cursor);
+        return out.sort((a, b) => (a.name < b.name ? 1 : -1)).map(({ url, ...x }) => x);
+      },
+      async read(name) {
+        if (!validName(name)) return null;
+        const r = await get(`${BACKUP_PREFIX}${name}.sqlite`, { access: 'private', useCache: false });
+        if (!r || r.statusCode !== 200) return null;
+        return Buffer.from(await new Response(r.stream).arrayBuffer());
+      },
+      async restore(name, { operator }) {
+        const bytes = await this.read(name);
+        if (!bytes) throw Object.assign(new Error('バックアップが見つかりません'), { status: 404 });
+        ctx.pendingRestore = { bytes, name, operator };
+      },
+      async prune({ keepDaily }) {
+        const r = await list({ prefix: BACKUP_PREFIX, limit: 1000 });
+        const daily = r.blobs.filter(b => b.pathname.endsWith('-daily.sqlite')).sort((a, b) => (a.pathname < b.pathname ? 1 : -1));
+        const old = daily.slice(keepDaily);
+        if (old.length) await del(old.map(b => b.url));
+        return old.length;
+      },
+    };
+  }
+
+  /** 復元：バックアップの内容を新しいデータベースとして開き、操作履歴を1行足して保存する */
+  function applyRestore(p) {
+    const etag = state.etag;
+    state = { ...openFile(p.bytes), etag, saved: 0 };
+    state.db.db
+      .prepare("INSERT INTO audit_log (at, action, record_id, operator, before_json, after_json) VALUES (?, 'バックアップから復元', ?, ?, '', '')")
+      .run(new Date().toISOString(), p.name, p.operator || '');
+  }
+
   async function handleOnce(makeRequest) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       await load();
-      const res = await worker.fetch(makeRequest(), envFromProcess(state.db));
+      const ctx = {};
+      const res = await worker.fetch(makeRequest(), envFromProcess(state.db, { BACKUPS: backupsApi(ctx) }));
+      if (ctx.pendingRestore && res.status === 200) applyRestore(ctx.pendingRestore);
       // 最後に保存した時点から変更がなければ（読み取りだけなら）保存しない
       if (changes(state.db) === (state.saved || 0)) return res;
       try {
@@ -111,7 +179,7 @@ export function createApp(blob) {
         })();
         if (!isConflict(e)) throw e;
         console.warn(`npas: 同時更新のためやり直し (${attempt})`);
-        await new Promise(r => setTimeout(r, 30 * attempt + Math.random() * 50));
+        await new Promise(r => setTimeout(r, Math.min(40 * attempt, 400) + Math.random() * 120));
       }
     }
     return new Response(JSON.stringify({ error: '混み合っています。少し待ってからもう一度お試しください' }), {

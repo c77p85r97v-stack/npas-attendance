@@ -88,10 +88,26 @@ function isLocked(row) {
   return row.locked_until && row.locked_until > nowIso();
 }
 
+/**
+ * スタッフのログイン方式。
+ *  'name' … 名前を選ぶだけ（旧システムと同じ。本人確認はしない）
+ *  'pin'  … 名前 ＋ PIN
+ * 設定 AUTH_MODE で切り替える（未設定なら安全側の 'pin'）。
+ */
+export function authMode(env) {
+  return env.AUTH_MODE === 'name' ? 'name' : 'pin';
+}
+
 export async function staffLogin(env, staffId, pin) {
   staffId = String(staffId || '');
   pin = String(pin ?? '');
   if (!staffId) throw new HttpError(400, '名前を選択してね');
+  if (authMode(env) === 'name') {
+    const u = await env.DB.prepare('SELECT id, name, nick, grade FROM staff WHERE id = ? AND active = 1').bind(staffId).first();
+    if (!u) throw new HttpError(401, 'スタッフが見つかりません。名簿を確認してください');
+    const cookie = await createSession(env, 'staff', u.id);
+    return { user: { id: u.id, name: u.name, nick: u.nick, grade: u.grade }, cookie };
+  }
   if (!/^\d{4,6}$/.test(pin)) throw new HttpError(400, 'PINは4〜6桁の数字で入力してください');
   const u = await env.DB.prepare(
     'SELECT id, name, nick, grade, pin_hash, failed_logins, locked_until FROM staff WHERE id = ? AND active = 1'

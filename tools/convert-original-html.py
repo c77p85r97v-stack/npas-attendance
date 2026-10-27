@@ -48,7 +48,7 @@ js = js.replace(old_call, "const call=(name,...args)=>window.npasApi(name,args);
 # 4. PIN入力欄を追加（ニックネーム表示と「はじめる」ボタンの間）
 nick = '<div class="nick" id="nickname">ニックネーム：―</div>'
 assert nick in src
-pin_group = ('<div class="group"><label class="form-label" for="pin">🔑 PINを入力してください</label>'
+pin_group = ('<div class="group" id="pinGroup" hidden><label class="form-label" for="pin">🔑 PINを入力してください</label>'
              '<input class="field" id="pin" type="password" inputmode="numeric" autocomplete="current-password" '
              'maxlength="6" placeholder="4〜6桁の数字"></div>')
 src = src.replace(nick, nick + pin_group, 1)

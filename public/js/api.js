@@ -50,6 +50,7 @@
 
   const api = {
     listStaff: () => http('GET', '/api/staff'),
+    config: () => http('GET', '/api/config'),
     login: (staffId, pin) => http('POST', '/api/login', { staffId, pin }),
     logout: () => http('POST', '/api/logout', {}),
     // 本人の特定はログイン時のCookieで行う（スタッフIDはサーバー側で照合のみ）
@@ -60,6 +61,7 @@
     getHistory: (staffId, month) =>
       http('GET', '/api/history?staffId=' + encodeURIComponent(staffId) + '&month=' + encodeURIComponent(month)),
     npasSubmitCorrection: (staffId, recordId, input, reason) => http('POST', '/api/corrections', { staffId, recordId, input, reason }),
+    npasSubmitDeletion: (staffId, recordId, reason) => http('POST', '/api/corrections/delete', { staffId, recordId, reason }),
     npasSaveBulkAttendance: (operatorId, staffIds, input) =>
       http('POST', '/api/bulk', Object.assign({ operatorId, staffIds }, input)),
     // 月別集計は「表示するときに元データから計算する」方式になったため、保存後の集計更新は不要。

@@ -288,3 +288,102 @@ test('サーバー側の動作確認（/api/test/selfcheck）が全手順成功�
   assert.equal(r.data.fail, 0, JSON.stringify(r.data.results.filter(x => !x.ok)));
   assert.ok(r.data.pass >= 25);
 });
+
+test('名前だけのログイン（AUTH_MODE=name）：PINなしでログインでき、他人の記録は操作できない', async () => {
+  const env = await setup({ extra: { AUTH_MODE: 'name' } });
+  const c = new Client(env);
+  assert.equal((await c.get('/api/config')).data.authMode, 'name');
+  assert.equal((await c.post('/api/login', { staffId: 'S005' })).status, 200); // PIN未設定でも可
+  assert.equal((await c.post('/api/login', { staffId: 'S004' })).status, 401); // 無効スタッフ
+  assert.equal((await c.post('/api/login', { staffId: '' })).status, 400);
+  const a = new Client(env);
+  await a.post('/api/login', { staffId: 'S001' });
+  await a.post('/api/attendance', base());
+  assert.equal((await c.get('/api/history?month=2026-10&staffId=S001')).status, 403);
+  assert.equal((await c.get('/api/history?month=2026-10')).data.entries.length, 0);
+  // 既定（未設定）は安全側の PIN 方式
+  const env2 = await setup();
+  assert.equal((await new Client(env2).get('/api/config')).data.authMode, 'pin');
+  assert.equal((await new Client(env2).post('/api/login', { staffId: 'S001' })).status, 400);
+});
+
+test('削除申請：申請だけでは消えず、承認で削除・履歴に全内容が残る。却下なら残る', async () => {
+  const env = await setup();
+  const s = await loginAs(env, 'S001');
+  const other = await loginAs(env, 'S002');
+  const { data: r1 } = await s.post('/api/attendance', base({ date: '2026-10-01' }));
+  const { data: r2 } = await s.post('/api/attendance', base({ date: '2026-10-02' }));
+  assert.equal((await s.post('/api/corrections/delete', { recordId: r1.id, reason: '' })).status, 400);
+  assert.equal((await other.post('/api/corrections/delete', { recordId: r1.id, reason: '間違い' })).status, 404);
+  const d1 = await s.post('/api/corrections/delete', { recordId: r1.id, reason: '二重に登録した' });
+  assert.equal(d1.status, 200);
+  // 審査待ちがあると、修正申請も削除申請もできない
+  assert.equal((await s.post('/api/corrections/delete', { recordId: r1.id, reason: 'x' })).status, 409);
+  assert.equal((await s.post('/api/corrections', { recordId: r1.id, input: base(), reason: 'x' })).status, 409);
+  assert.equal((await s.get('/api/history?month=2026-10')).data.entries.length, 2);
+  const a = await adminClient(env);
+  const list = (await a.get('/api/admin/corrections')).data.requests;
+  assert.equal(list[0].kind, '削除');
+  assert.equal((await a.post(`/api/admin/corrections/${d1.data.requestId}/approve`, { memo: 'OK' })).status, 200);
+  const h = await s.get('/api/history?month=2026-10');
+  assert.deepEqual(h.data.entries.map(e => e.id), [r2.id]);
+  const log = await env.DB.prepare("SELECT * FROM audit_log WHERE action = '削除申請の承認（記録を削除）'").first();
+  assert.equal(JSON.parse(log.before_json).date, '2026-10-01');
+  // 却下
+  const d2 = await s.post('/api/corrections/delete', { recordId: r2.id, reason: 'やっぱり' });
+  assert.equal((await a.post(`/api/admin/corrections/${d2.data.requestId}/reject`, { memo: '必要な記録' })).status, 200);
+  assert.equal((await s.get('/api/history?month=2026-10')).data.entries.length, 1);
+});
+
+test('削除申請：申請後に記録が変更されていたら承認しない', async () => {
+  const env = await setup();
+  const s = await loginAs(env, 'S001');
+  const { data: r1 } = await s.post('/api/attendance', base());
+  const d = await s.post('/api/corrections/delete', { recordId: r1.id, reason: 'x' });
+  await env.DB.prepare("UPDATE attendance SET end_time = '16:00' WHERE id = ?").bind(r1.id).run();
+  const a = await adminClient(env);
+  assert.equal((await a.post(`/api/admin/corrections/${d.data.requestId}/approve`, {})).status, 409);
+  assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 1);
+});
+
+test('テスト記録の初期化：確認の言葉が必要・先にバックアップ・名簿と管理者は残る', async () => {
+  const calls = [];
+  const env = await setup({ extra: { BACKUPS: { create: async label => (calls.push(label), { name: '20261027-120000-' + label }) } } });
+  const s = await loginAs(env, 'S001');
+  await s.post('/api/attendance', base());
+  await s.post('/api/clock/in');
+  const a = await adminClient(env);
+  const pv = await a.get('/api/admin/reset-history');
+  assert.deepEqual(pv.data.counts, { attendance: 1, requests: 0, audit: 2, clockedIn: 1 });
+  assert.equal((await a.post('/api/admin/reset-history', { confirm: 'はい' })).status, 400);
+  assert.equal(calls.length, 0);
+  const r = await a.post('/api/admin/reset-history', { confirm: '初期化' });
+  assert.equal(r.status, 200);
+  assert.deepEqual(calls, ['before-reset']);
+  assert.equal(r.data.backup, '20261027-120000-before-reset');
+  for (const t of ['attendance', 'clock_sessions', 'correction_requests']) assert.equal(await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${t}`).first('n'), 0, t);
+  assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM staff').first('n'), 5);
+  assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM admins').first('n'), 1);
+  const logs = (await a.get('/api/admin/audit')).data.logs;
+  assert.deepEqual(logs.map(l => l.action), ['テスト記録の初期化']);
+  assert.equal((await s.get('/api/me')).status, 401); // スタッフはログインし直し
+  assert.equal((await a.get('/api/admin/me')).status, 200); // 管理者はそのまま
+  // スタッフは実行できない
+  assert.equal((await (await loginAs(env, 'S002')).post('/api/admin/reset-history', { confirm: '初期化' })).status, 401);
+});
+
+test('テスト記録の初期化：バックアップに失敗したら何も消さない', async () => {
+  const env = await setup({ extra: { BACKUPS: { create: async () => { throw new Error('storage down'); } } } });
+  const s = await loginAs(env, 'S001');
+  await s.post('/api/attendance', base());
+  const a = await adminClient(env);
+  assert.equal((await a.post('/api/admin/reset-history', { confirm: '初期化' })).status, 500);
+  assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 1);
+});
+
+test('サーバー側の動作確認：名前だけのログイン方式でも全手順成功する', async () => {
+  const { createTestEnv } = await import('../tools/d1-node.mjs');
+  const env = createTestEnv({ AUTH_MODE: 'name' });
+  const r = await new Client(env).get('/api/test/selfcheck');
+  assert.equal(r.data.fail, 0, JSON.stringify(r.data.results.filter(x => !x.ok)));
+});

@@ -45,6 +45,7 @@ export async function listCorrections(env, request) {
       processedAt: r.processed_at,
       processedBy: r.processed_by,
       memo: r.admin_memo,
+      kind: r.kind || '修正',
     })),
   });
 }
@@ -73,6 +74,7 @@ export async function approveCorrection(env, request, id) {
   const req = await env.DB.prepare('SELECT * FROM correction_requests WHERE id = ?').bind(id).first();
   if (!req) throw new HttpError(404, '申請が見つかりません');
   if (req.status !== '申請中') throw new HttpError(409, `この申請は処理済みです（${req.status}）`);
+  if (req.kind === '削除') return approveDeletion(env, admin, req, memo);
   const before = safeParse(req.before_json);
   const afterRaw = safeParse(req.after_json);
   if (!before || !afterRaw) throw new HttpError(400, '申請データを読み取れません');
@@ -105,6 +107,34 @@ export async function approveCorrection(env, request, id) {
     throw new HttpError(409, '申請後に勤務記録が変更されています。この申請は却下し、必要なら再申請を依頼してください');
   }
   return json({ ok: true, status: '承認', recordChanged: res[0].meta.changes === 1 });
+}
+
+/** 削除申請の承認：申請時から記録が変わっていなければ削除し、全内容を操作履歴に残す */
+async function approveDeletion(env, admin, req, memo) {
+  const before = safeParse(req.before_json);
+  if (!before) throw new HttpError(400, '申請データを読み取れません');
+  const current = await env.DB.prepare('SELECT * FROM attendance WHERE id = ?').bind(req.record_id).first();
+  if (!current) throw new HttpError(404, '対象の勤務記録が見つかりません（すでに削除されています）');
+  const at = nowIso();
+  const who = adminLabel(admin);
+  const snapshot = JSON.stringify({ ...recordSnapshot(current), rowOrder: current.row_order, updatedAt: current.updated_at });
+  const res = await env.DB.batch([
+    env.DB.prepare(
+      `UPDATE correction_requests SET status = '承認', processed_at = ?, processed_by = ?, admin_memo = ?
+        WHERE id = ? AND status = '申請中' AND EXISTS (SELECT 1 FROM attendance WHERE id = ? AND ${SAME_AS})`
+    ).bind(at, who, memo, req.id, req.record_id, ...sameBinds(before)),
+    env.DB.prepare(
+      `DELETE FROM attendance WHERE id = ? AND EXISTS (SELECT 1 FROM correction_requests WHERE id = ? AND status = '承認' AND processed_at = ?)`
+    ).bind(req.record_id, req.id, at),
+    env.DB.prepare(
+      `INSERT INTO audit_log (at, action, record_id, operator, before_json, after_json)
+       SELECT ?, '削除申請の承認（記録を削除）', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM correction_requests WHERE id = ? AND status = '承認' AND processed_at = ?)`
+    ).bind(at, req.record_id, who, snapshot, JSON.stringify({ requestId: req.id, reason: req.reason, memo }), req.id, at),
+  ]);
+  if (!res[0].meta || res[0].meta.changes !== 1) {
+    throw new HttpError(409, '申請後に勤務記録が変更されています。この申請は却下し、必要なら再申請を依頼してください');
+  }
+  return json({ ok: true, status: '承認', deleted: true });
 }
 
 export async function rejectCorrection(env, request, id) {

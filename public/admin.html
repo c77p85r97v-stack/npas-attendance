@@ -37,7 +37,7 @@
 
 <main id="appView" class="wrap" hidden>
   <nav class="tabs" id="tabs">
-    <button type="button" data-tab="corrections" class="on">修正申請<span class="count" id="pendingCount"></span></button>
+    <button type="button" data-tab="corrections" class="on">修正・削除申請<span class="count" id="pendingCount"></span></button>
     <button type="button" data-tab="summary">月別集計</button>
     <button type="button" data-tab="personal">個人別申請書</button>
     <button type="button" data-tab="records">勤怠記録</button>
@@ -114,6 +114,19 @@
 
   <!-- データ移行・バックアップ -->
   <section class="tab" id="tab-data" hidden>
+    <div class="card" id="resetCard" hidden>
+      <h3>テスト記録の初期化（試し終わったら、本番開始前に）</h3>
+      <p class="note">勤怠記録・修正/削除申請・出勤中の状態・操作履歴をすべて消します。<b>スタッフ名簿と管理者はそのまま残ります。</b>消す前の状態は自動でバックアップされ、下の「保存されているバックアップ」から元に戻せます。</p>
+      <div id="resetCounts" class="note"></div>
+      <div class="bar"><input id="resetConfirm" placeholder="確認のため「初期化」と入力"><button type="button" class="danger" id="resetBtn">テスト記録を初期化する</button></div>
+      <p id="resetResult" class="note"></p>
+    </div>
+    <div class="card" id="backupCard">
+      <h3>保存されているバックアップ</h3>
+      <p class="note">毎日 3:00 に自動で保存されます（30日分）。初期化や復元の前にも自動で保存されます。</p>
+      <div class="bar"><button type="button" id="backupNow">今すぐバックアップ</button></div>
+      <div id="backupList" class="note"></div>
+    </div>
     <div class="card">
       <h3>バックアップ（書き出し）</h3>
       <p class="note">全データ（スタッフ名簿・勤怠データ・修正履歴・打刻修正申請）を1つのファイルに保存します。PINは含まれません。このファイルは下の「データ移行」からそのまま復元できます。</p>

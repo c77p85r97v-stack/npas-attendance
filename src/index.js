@@ -2,6 +2,7 @@
 // 画面（public/ 以下のファイル）は Workers の静的アセットとして配信し、
 // /api/ 以下だけをこのプログラムが処理する。
 import { json, errorResponse, assertSameOrigin, HttpError } from './lib/http.js';
+import { authMode } from './lib/auth.js';
 import * as staff from './routes/staff.js';
 import * as att from './routes/attendance.js';
 import * as clock from './routes/clock.js';
@@ -11,11 +12,13 @@ import * as admin from './routes/admin.js';
 import * as reports from './routes/reports.js';
 import * as migrate from './routes/migrate.js';
 import * as testtools from './routes/testtools.js';
+import * as maint from './routes/maintenance.js';
 
 // [メソッド, パス(正規表現), 処理]
 const ROUTES = [
   ['GET', /^\/api\/health$/, env => json({ ok: true, environment: env.ENVIRONMENT || 'development' })],
   ['GET', /^\/api\/staff$/, env => staff.listStaff(env)],
+  ['GET', /^\/api\/config$/, env => json({ authMode: authMode(env), environment: env.ENVIRONMENT || 'development', testTools: testtools.testToolsEnabled(env), backups: !!env.BACKUPS })],
   ['POST', /^\/api\/login$/, (env, req) => staff.login(env, req)],
   ['POST', /^\/api\/logout$/, (env, req) => staff.logout(env, req)],
   ['GET', /^\/api\/me$/, (env, req) => staff.me(env, req)],
@@ -26,6 +29,7 @@ const ROUTES = [
   ['GET', /^\/api\/history$/, (env, req) => att.getHistory(env, req)],
   ['POST', /^\/api\/bulk$/, (env, req) => bulk.saveBulk(env, req)],
   ['POST', /^\/api\/corrections$/, (env, req) => corr.submitCorrection(env, req)],
+  ['POST', /^\/api\/corrections\/delete$/, (env, req) => corr.submitDeletion(env, req)],
 
   ['POST', /^\/api\/admin\/login$/, (env, req) => admin.login(env, req)],
   ['POST', /^\/api\/admin\/logout$/, (env, req) => admin.logout(env, req)],
@@ -57,6 +61,14 @@ const ROUTES = [
   ['POST', /^\/api\/admin\/migrate$/, (env, req) => migrate.migrateChunk(env, req)],
   ['POST', /^\/api\/admin\/migrate\/report$/, (env, req) => migrate.saveReport(env, req)],
   ['GET', /^\/api\/admin\/migrate\/reports$/, (env, req) => migrate.listReports(env, req)],
+
+  ['GET', /^\/api\/admin\/reset-history$/, (env, req) => maint.resetPreview(env, req)],
+  ['POST', /^\/api\/admin\/reset-history$/, (env, req) => maint.resetHistory(env, req)],
+  ['GET', /^\/api\/admin\/backups$/, (env, req) => maint.listBackups(env, req)],
+  ['POST', /^\/api\/admin\/backups$/, (env, req) => maint.createBackup(env, req)],
+  ['GET', /^\/api\/admin\/backups\/download$/, (env, req) => maint.downloadBackup(env, req)],
+  ['POST', /^\/api\/admin\/backups\/restore$/, (env, req) => maint.restoreBackup(env, req)],
+  ['GET', /^\/api\/cron\/backup$/, (env, req) => maint.cronBackup(env, req)],
 
   ['POST', /^\/api\/test\/reset$/, (env, req) => testtools.resetTestData(env, req)],
   ['GET', /^\/api\/test\/enabled$/, env => json({ enabled: testtools.testToolsEnabled(env) })],

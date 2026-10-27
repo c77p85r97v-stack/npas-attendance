@@ -40,17 +40,11 @@ const toastText = async () => (await page.waitForSelector('#toast', { state: 'vi
 await page.goto(BASE + '/');
 await page.waitForFunction(() => !document.getElementById('grade').disabled);
 
-await check('ログイン：PINを間違えるとエラー表示、画面は進まない', async () => {
+await check('ログイン：名前を選ぶだけ（PIN欄は表示されない）でホーム画面へ', async () => {
   await page.selectOption('#grade', '1');
   await page.selectOption('#person', 'TEST01');
   assert.equal(await page.textContent('#nickname'), 'ニックネーム：いちろう');
-  await page.fill('#pin', '9999');
-  await page.click('#loginBtn');
-  assert.match(await toastText(), /名前またはPINが正しくありません/);
-  assert.ok(await page.isVisible('#login.active'));
-});
-await check('ログイン：正しいPINでホーム画面へ', async () => {
-  await page.fill('#pin', '1234');
+  assert.equal(await page.isVisible('#pin'), false);
   await page.click('#loginBtn');
   await page.waitForSelector('#home.active');
   assert.equal(await page.textContent('#loggedInName'), 'いちろう');
@@ -194,19 +188,36 @@ await check('管理画面：個人別勤怠申請書', async () => {
   assert.match(await admin.textContent('#perSheet'), /氏名：テスト 一郎（いちろう）/);
   await admin.screenshot({ path: join(out, 'admin-personal.png'), fullPage: true });
 });
-let newPin = null;
-await check('管理画面：PINの再発行 → 新しいPINでスタッフがログインできる', async () => {
+await check('削除申請：スタッフが申請 → 管理者が承認すると記録が消える', async () => {
+  await page.selectOption('#grade', '1');
+  await page.selectOption('#person', 'TEST01');
+  await page.click('#loginBtn');
+  await page.waitForSelector('#home.active');
+  await page.click('[data-go="corrections"]');
+  await page.waitForSelector('.correction-pick');
+  const before = (await page.$$('.correction-pick')).length;
+  await page.click('.correction-pick >> nth=0');
+  await page.click('#sendDeletion');
+  assert.match(await page.textContent('#correctionMessage'), /削除の理由/);
+  await page.fill('#fixReason', '間違えて登録した');
+  await page.click('#sendDeletion');
+  await page.waitForFunction(() => /削除申請を受け付けました/.test(document.getElementById('correctionMessage').textContent));
+  await admin.click('[data-tab="corrections"]');
+  await admin.waitForSelector('.req');
+  assert.match(await admin.textContent('#corrList'), /削除申請/);
+  await admin.click('.req button.primary');
+  await admin.click('#modalOk');
+  assert.match(await adminToast(), /承認しました/);
+  await page.click('#loadCorrections');
+  await page.waitForFunction(n => document.querySelectorAll('.correction-pick').length === n - 1, before);
+  await page.click('#corrections .back');
+});
+await check('管理画面：名前だけの方式では PIN の列・ボタンが出ない', async () => {
   await admin.click('[data-tab="staff"]');
   await admin.waitForSelector('#staffTable tbody tr');
-  const row = admin.locator('#staffTable tbody tr', { hasText: 'TEST05' });
-  await row.locator('button', { hasText: 'PIN再発行' }).click();
-  await admin.click('#modalOk');
-  await admin.waitForSelector('.pinlist');
-  newPin = (await admin.textContent('.pinlist tbody td:last-child')).trim();
-  assert.match(newPin, /^\d{6}$/);
+  assert.doesNotMatch(await admin.textContent('#staffTable'), /PIN/);
+  assert.equal(await admin.isVisible('#pinMissing'), false);
   await admin.screenshot({ path: join(out, 'admin-staff.png'), fullPage: true });
-  const status = await page.evaluate(pin => fetch('/api/login', { method: 'POST', headers: { 'X-Requested-With': 'npas', 'Content-Type': 'application/json' }, body: JSON.stringify({ staffId: 'TEST05', pin }) }).then(r => r.status), newPin);
-  assert.equal(status, 200);
 });
 await check('管理画面：データ移行（ファイル選択 → 確認 → 取り込み → 照合）', async () => {
   const exportJson = {
@@ -242,7 +253,19 @@ await check('管理画面：操作履歴に一連の操作が残っている', a
   await admin.click('[data-tab="audit"]');
   await admin.waitForSelector('#auditTable tbody tr');
   const text = await admin.textContent('#auditTable');
-  for (const a of ['出勤打刻', '退勤打刻', '勤怠申請', '一括勤怠申請', '打刻修正申請', '打刻修正承認', 'PIN発行']) assert.ok(text.includes(a), a);
+  for (const a of ['出勤打刻', '退勤打刻', '勤怠申請', '一括勤怠申請', '打刻修正申請', '打刻修正承認', '削除申請']) assert.ok(text.includes(a), a);
+});
+await check('管理画面：テスト記録の初期化（確認の言葉が必要・名簿は残る）', async () => {
+  await admin.click('[data-tab="data"]');
+  await admin.waitForFunction(() => /現在の件数/.test(document.getElementById('resetCounts').textContent));
+  await admin.click('#resetBtn');
+  await admin.waitForFunction(() => /初期化」と入力/.test(document.getElementById('resetResult').textContent));
+  await admin.fill('#resetConfirm', '初期化');
+  await admin.click('#resetBtn');
+  await admin.waitForFunction(() => /初期化しました/.test(document.getElementById('resetResult').textContent));
+  await admin.screenshot({ path: join(out, 'admin-reset.png'), fullPage: true });
+  assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 0);
+  assert.ok((await env.DB.prepare('SELECT COUNT(*) AS n FROM staff').first('n')) >= 5);
 });
 await check('画面上のJavaScriptエラーがない', async () => {
   assert.deepEqual(pageErrors, []);

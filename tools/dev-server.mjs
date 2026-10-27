@@ -86,6 +86,7 @@ export async function createDevEnv(dbFile) {
     DB: new D1Node(dbFile).applyMigrations(),
     ENVIRONMENT: 'development',
     ALLOW_TEST_TOOLS: 'true',
+    AUTH_MODE: process.env.AUTH_MODE || 'name',
     PIN_PEPPER: process.env.PIN_PEPPER || 'local-dev-pepper-0123456789',
     LOG_TIMING: process.env.LOG_TIMING || 'true',
   };

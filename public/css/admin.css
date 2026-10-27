@@ -1,5 +1,6 @@
 /* N-PAS 管理画面（スタッフ画面と同じ色・フォントを使用） */
 :root{--navy:#10365e;--navy2:#0a2949;--cream:#fffdf5;--yellow:#ffdf28;--line:#dce5ed;--text:#10345c;--pale:#eef3f9;--red:#a52b30;--green:#186442}
+[hidden]{display:none!important}
 *{box-sizing:border-box}
 body{margin:0;background:#e9edf1;color:var(--text);font-family:system-ui,-apple-system,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-weight:600;font-size:14px}
 button,select,input,textarea{font:inherit;color:inherit}

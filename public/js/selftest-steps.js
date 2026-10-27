@@ -45,17 +45,27 @@ export function createSteps(fetchImpl) {
     expect(!JSON.stringify(r.data).includes('pin'), 'PIN情報が含まれています');
     return { ms: r.ms, msg: `${r.data.length}名` };
   });
-  step('間違ったPINではログインできない', async () => {
+  let mode = 'pin';
+  step('ログイン方式の確認', async () => {
+    const r = await GET('/api/config');
+    expect(r.status === 200, 'config を取得できません');
+    mode = r.data.authMode;
+    return { ms: r.ms, msg: mode === 'name' ? '名前を選ぶだけでログイン（PINなし）' : '名前＋PIN' };
+  });
+  step('名簿にないスタッフではログインできない', async () => {
+    const r = await POST('/api/login', { staffId: 'NOBODY', pin: '1234' });
+    expect(r.status === 401, '名簿にないIDでログインできてしまいました');
+    return { ms: r.ms, msg: r.data.error };
+  });
+  step('PIN方式なら：間違ったPIN・PINなしではログインできない', async () => {
+    if (mode === 'name') return { msg: '名前だけの方式のため対象外' };
     const r = await POST('/api/login', { staffId: 'TEST01', pin: '9999' });
     expect(r.status === 401, '間違ったPINでログインできてしまいました');
+    const r2 = await POST('/api/login', { staffId: 'TEST01' });
+    expect(r2.status === 400, 'PINなしでログインできてしまいました');
     return { ms: r.ms, msg: r.data.error };
   });
-  step('名前の選択だけ（PINなし）ではログインできない', async () => {
-    const r = await POST('/api/login', { staffId: 'TEST01' });
-    expect(r.status === 400, 'PINなしでログインできてしまいました');
-    return { ms: r.ms, msg: r.data.error };
-  });
-  step('正しいPINでログイン（TEST01）', async () => {
+  step('ログイン（TEST01）', async () => {
     const r = await POST('/api/login', { staffId: 'TEST01', pin: '1234' });
     expect(r.status === 200, r.data?.error);
     return { ms: r.ms, msg: r.data.user.name };
@@ -141,6 +151,16 @@ export function createSteps(fetchImpl) {
     const dup = await POST('/api/corrections', { recordId, input: { date: day, start: '10:00', end: '17:00', breakMin: '0' }, reason: '二重' });
     expect(dup.status === 409, '審査待ちがあるのに二重に申請できました');
     return { ms: r.ms, msg: '申請中（二重申請は拒否）' };
+  });
+  step('削除申請（申請だけでは消えない・承認待ちは1件まで）', async () => {
+    const a = await POST('/api/attendance', { date: day, start: '18:00', end: '19:00', breakMin: '0', task: '削除申請テスト', allowance: '' });
+    const r = await POST('/api/corrections/delete', { recordId: a.data.id, reason: '動作確認のため' });
+    expect(r.status === 200, JSON.stringify(r.data));
+    const h = await GET('/api/history?month=' + month);
+    expect(h.data.entries.some(e => e.id === a.data.id), '承認前に記録が消えています');
+    const dup = await POST('/api/corrections/delete', { recordId: a.data.id, reason: '二重' });
+    expect(dup.status === 409, '二重に申請できました');
+    return { ms: r.ms, msg: '申請中（承認は管理画面で）' };
   });
   step('同時アクセス：5回同時に出勤を押しても1回だけ', async () => {
     await POST('/api/test/reset?samples=0').then(() => POST('/api/login', { staffId: 'TEST05', pin: '1234' }));

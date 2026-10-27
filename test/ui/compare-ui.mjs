@@ -48,7 +48,7 @@ for (const variant of ['original', 'new']) {
   if (variant === 'original') {
     // 旧版はPINがないので、APIのログインだけ裏で済ませる（Cookieを共有）
     await page.evaluate(() => window.npasApi('login', ['TEST01', '1234']));
-  } else {
+  } else if (await page.isVisible('#pin')) {
     await page.fill('#pin', '1234');
   }
   await page.click('#loginBtn');

@@ -136,6 +136,7 @@ function convCorrection(r) {
     processed_at: normDateTime(r['処理日時']) || null,
     processed_by: str(r['処理者']) || null,
     admin_memo: str(r['管理者メモ']),
+    kind: str(r['種類']) === '削除' ? '削除' : '修正',
   };
 }
 
@@ -172,8 +173,8 @@ const SPEC = {
   corrections: {
     table: 'correction_requests',
     key: 'id',
-    cols: ['id', 'requested_at', 'staff_id', 'staff_name', 'record_id', 'before_json', 'after_json', 'reason', 'status', 'processed_at', 'processed_by', 'admin_memo'],
-    compare: ['record_id', 'staff_id', 'before_json', 'after_json', 'reason', 'status', 'admin_memo'],
+    cols: ['id', 'requested_at', 'staff_id', 'staff_name', 'record_id', 'before_json', 'after_json', 'reason', 'status', 'processed_at', 'processed_by', 'admin_memo', 'kind'],
+    compare: ['record_id', 'staff_id', 'before_json', 'after_json', 'reason', 'status', 'admin_memo', 'kind'],
     extraInsert: { source: "'migration'" },
   },
   audit: {

@@ -31,7 +31,9 @@ for (const line of readFileSync(join(ROOT, 'public', '_headers'), 'utf8').split(
 }
 routes.push({ handle: 'filesystem' });
 routes.push({ src: '^/api/(.*)$', dest: '/api' });
-writeFileSync(join(OUT, 'config.json'), JSON.stringify({ version: 3, routes }, null, 2));
+// 毎日 3:00（日本時間）に自動バックアップ（Vercel Cron。UTC 18:00）
+const crons = [{ path: '/api/cron/backup', schedule: '0 18 * * *' }];
+writeFileSync(join(OUT, 'config.json'), JSON.stringify({ version: 3, routes, crons }, null, 2));
 
 // 3) 関数
 const FN = join(OUT, 'functions', 'api.func');
