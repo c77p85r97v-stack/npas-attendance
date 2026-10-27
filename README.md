@@ -4,8 +4,23 @@ Google Apps Script（GAS）＋スプレッドシートで動いていた N-PAS �
 **Cloudflare Workers ＋ Cloudflare D1** に移したものです。
 スタッフ用の画面は、今の見た目と操作をそのまま引き継いでいます（変わったのはログイン画面の PIN 入力欄の追加だけです）。
 
-> **現在の状態**：プログラムは完成し、ローカル模擬環境での自動テストはすべて成功しています。
-> **Cloudflare へのデプロイ（公開）はまだです。** あなたの Cloudflare アカウントでの操作が必要です（[4章](#4-cloudflare-への公開手順)）。
+> **現在の状態**
+> - **試用版を Vercel に公開済み**：https://npas-attendance-trial.vercel.app/ （テスト用データのみ。開くには Vercel へのログインが必要）
+> - 本番用の構成（Cloudflare Workers + D1）のコードも完成済み。Cloudflare への公開は、あなたのアカウントでの操作が必要です（[4章](#4-cloudflare-への公開手順)）。
+
+## 0. 試用版（Vercel）
+
+| 画面 | URL |
+|---|---|
+| スタッフ画面 | https://npas-attendance-trial.vercel.app/ |
+| 管理画面 | https://npas-attendance-trial.vercel.app/admin.html |
+| ボタン1つの動作確認 | https://npas-attendance-trial.vercel.app/selftest.html |
+
+- テスト用アカウントは3章と同じです（スタッフ「テスト 一郎」PIN `1234`／管理者 `testadmin`・`test-password-1234`）。
+- 仕組み：画面と API は Cloudflare 版と同じプログラム。データベース（SQLite のファイル）だけを Vercel Blob（非公開）に保存しています（`platform/vercel/handler.mjs`）。書き込みは「誰も更新していないときだけ保存」する条件付き書き込みで、同時に更新された場合は最新を読み直してやり直すため、取りこぼしや二重登録は起きません。
+- GitHub の `main` に送ると、自動で公開し直されます。
+- アクセス制限（Vercel Authentication）が有効なので、開くには Vercel にログインしている必要があります。他の人にも試してもらう場合は、Vercel のプロジェクト設定 →「Deployment Protection」で「Vercel Authentication」をオフにしてください（テスト用データしか入っていません）。
+- 試用版の位置づけです。本物のデータを入れて運用する場合は、Cloudflare 版（4章）か、データベースサービスを使う構成をおすすめします（Blob 方式は少人数・低頻度向け）。
 
 ---
 
