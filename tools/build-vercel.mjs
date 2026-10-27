@@ -38,6 +38,8 @@ const FN = join(OUT, 'functions', 'api.func');
 mkdirSync(FN, { recursive: true });
 for (const d of ['src', 'migrations', 'platform']) cpSync(join(ROOT, d), join(FN, d), { recursive: true });
 mkdirSync(join(FN, 'tools'), { recursive: true });
+mkdirSync(join(FN, 'public', 'js'), { recursive: true });
+cpSync(join(ROOT, 'public', 'js', 'selftest-steps.js'), join(FN, 'public', 'js', 'selftest-steps.js'));
 cpSync(join(ROOT, 'tools', 'd1-node.mjs'), join(FN, 'tools', 'd1-node.mjs'));
 writeFileSync(
   join(FN, 'package.json'),

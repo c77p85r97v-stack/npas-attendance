@@ -60,6 +60,7 @@ const ROUTES = [
 
   ['POST', /^\/api\/test\/reset$/, (env, req) => testtools.resetTestData(env, req)],
   ['GET', /^\/api\/test\/enabled$/, env => json({ enabled: testtools.testToolsEnabled(env) })],
+  ['GET', /^\/api\/test\/selfcheck$/, (env, req) => testtools.selfCheck(env, req, handleApi)],
 ];
 
 // テストでは時計を差し替えられる（本番の設定値からは変更できない）

@@ -83,3 +83,31 @@ export async function resetTestData(env, request) {
     message: 'テスト用スタッフ（TEST01〜TEST05）のデータを初期化しました。他のスタッフのデータは変更していません。',
   });
 }
+
+/**
+ * サーバーの中で動作確認テスト（selftest.html と同じ手順）を実行して結果を返す。
+ * ブラウザを使わずに、公開した環境が正しく動くかを確かめるため。
+ */
+export async function selfCheck(env, request, handleApi) {
+  if (!testToolsEnabled(env)) throw new HttpError(404, '見つかりません');
+  const { runSteps } = await import('../../public/js/selftest-steps.js');
+  const origin = new URL(request.url).origin;
+  const cookies = new Map();
+  const fetchImpl = async (path, init = {}) => {
+    const headers = new Headers(init.headers || {});
+    headers.set('Origin', origin);
+    if (cookies.size) headers.set('Cookie', [...cookies].map(([k, v]) => `${k}=${v}`).join('; '));
+    const res = await handleApi(new Request(origin + path, { method: init.method || 'GET', headers, body: init.body }), env);
+    for (const c of res.headers.getSetCookie ? res.headers.getSetCookie() : []) {
+      const [kv] = c.split(';');
+      const i = kv.indexOf('=');
+      if (/Max-Age=0/.test(c)) cookies.delete(kv.slice(0, i));
+      else cookies.set(kv.slice(0, i), kv.slice(i + 1));
+    }
+    return res;
+  };
+  const started = Date.now();
+  const results = await runSteps(fetchImpl);
+  const pass = results.filter(r => r.ok).length;
+  return json({ pass, fail: results.length - pass, totalMs: Date.now() - started, results });
+}

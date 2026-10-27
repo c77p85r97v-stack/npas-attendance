@@ -279,3 +279,12 @@ test('本番環境で PIN_PEPPER が未設定なら、ログインを止めて�
   assert.equal(r.status, 500);
   assert.match(r.data.error, /PIN_PEPPER/);
 });
+
+test('サーバー側の動作確認（/api/test/selfcheck）が全手順成功する', async () => {
+  const { createTestEnv } = await import('../tools/d1-node.mjs');
+  const env = createTestEnv();
+  const r = await new Client(env).get('/api/test/selfcheck');
+  assert.equal(r.status, 200);
+  assert.equal(r.data.fail, 0, JSON.stringify(r.data.results.filter(x => !x.ok)));
+  assert.ok(r.data.pass >= 25);
+});
