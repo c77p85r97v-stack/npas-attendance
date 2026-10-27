@@ -76,7 +76,7 @@ async function npasSubmitBulk(){
   const names=ids.map(id=>staff.find(s=>s.id===id)?.name||id);
   const preview='代表者：'+selected.name+'\n勤務日：'+data.date+'\n時間：'+data.start+'〜'+data.end+
     '\n休憩：'+br+'分\n対象：'+ids.length+'名\n'+names.join('、')+
-    '\n\n※同じ勤務日の記録がある人はスキップします。\n\nこの内容で一括申請しますか？';
+    '\n\n※勤務時間が重なる記録がある人はスキップします。\n\nこの内容で一括申請しますか？';
   // LINE内ブラウザでwindow.confirmが表示されない場合に備え、アプリ内の確認画面を使う。
   $('npasBulkConfirmText').textContent=preview.replace(/\n\nこの内容で一括申請しますか？$/, '');
   $('npasBulkConfirm').style.display='flex';

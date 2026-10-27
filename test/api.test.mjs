@@ -280,7 +280,7 @@ test('退勤打刻：応答が届かず再送しても、同時に2回押して�
   assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 2);
 });
 
-test('一括勤怠申請：重複する人はスキップし、成功件数・スキップ件数・理由を返す', async () => {
+test('一括勤怠申請：勤務時間が重なる人はスキップし、成功件数・スキップ件数・理由を返す', async () => {
   const env = await setup();
   const op = await loginAs(env, 'S003');
   const s1 = await loginAs(env, 'S001');
@@ -288,7 +288,7 @@ test('一括勤怠申請：重複する人はスキップし、成功件数・�
   const r = await op.post('/api/bulk', { operatorId: 'S003', staffIds: ['S001', 'S002', 'S003'], ...base({ date: '2026-10-10', start: '13:00', end: '17:00' }) });
   assert.equal(r.status, 200);
   assert.deepEqual(r.data.saved.map(s => s.id), ['S002', 'S003']);
-  assert.deepEqual(r.data.skipped, [{ id: 'S001', name: '青空 みなみ', reason: 'この勤務日の記録が既にあります' }]);
+  assert.deepEqual(r.data.skipped, [{ id: 'S001', name: '青空 みなみ', reason: '勤務時間が重なる記録が既にあります（10/10 10:00〜15:00）' }]);
   assert.equal(r.data.auditWarning, '');
   const rec = await env.DB.prepare("SELECT * FROM attendance WHERE staff_id = 'S002'").first();
   assert.equal(rec.method, 'bulk-manual');
@@ -402,4 +402,44 @@ test('想定外のエラーは詳細（SQL等）を画面に出さない', async
   const r = await a.post('/api/attendance', base());
   assert.equal(r.status, 500);
   assert.doesNotMatch(r.data.error, /audit_log|SQL|no such table/i);
+});
+
+test('一括勤怠申請：スキップは勤務時間帯が少しでも重なる場合だけ（同じ日でも重ならなければ登録）', async () => {
+  const env = await setup();
+  const op = await loginAs(env, 'S003');
+  const s1 = await loginAs(env, 'S001');
+  const s2 = await loginAs(env, 'S002');
+  await s1.post('/api/attendance', base({ date: '2026-10-10', start: '09:00', end: '12:00' }));
+  await s2.post('/api/attendance', base({ date: '2026-10-10', start: '12:00', end: '13:01' }));
+  const bulk = (o) => op.post('/api/bulk', { staffIds: ['S001', 'S002'], ...base({ date: '2026-10-10', ...o }) }).then(r => r.data);
+  // 13:00〜17:00：S001(9-12)は重ならない／S002(12:00-13:01)は1分重なる
+  let r = await bulk({ start: '13:00', end: '17:00' });
+  assert.deepEqual(r.saved.map(x => x.id), ['S001']);
+  assert.deepEqual(r.skipped.map(x => x.id), ['S002']);
+  assert.match(r.skipped[0].reason, /12:00〜13:01/);
+  // 17:00〜19:00：13:00〜17:00 と「接するだけ」なので重ならない
+  r = await bulk({ start: '17:00', end: '19:00' });
+  assert.deepEqual(r.saved.map(x => x.id).sort(), ['S001', 'S002']);
+  // 18:30〜18:31：17:00〜19:00 の中なので両方スキップ
+  r = await bulk({ start: '18:30', end: '18:31' });
+  assert.equal(r.saved.length, 0);
+  assert.equal(r.skipped.length, 2);
+});
+
+test('一括勤怠申請：日付をまたぐ勤務との重なりも判定する', async () => {
+  const env = await setup();
+  const op = await loginAs(env, 'S003');
+  const s1 = await loginAs(env, 'S001');
+  await s1.post('/api/attendance', base({ date: '2026-10-31', start: '22:00', end: '02:00' })); // 11/1 02:00 まで
+  const bulk = (o) => op.post('/api/bulk', { staffIds: ['S001'], ...base(o) }).then(r => r.data);
+  let r = await bulk({ date: '2026-11-01', start: '01:00', end: '03:00' }); // 翌日の深夜と重なる
+  assert.equal(r.skipped.length, 1);
+  assert.match(r.skipped[0].reason, /10\/31 22:00〜02:00/);
+  r = await bulk({ date: '2026-11-01', start: '02:00', end: '05:00' }); // 接するだけ
+  assert.equal(r.saved.length, 1);
+  // 前日側：10/30 23:00〜10/31 23:30 は 10/31 22:00〜 と重なる
+  r = await bulk({ date: '2026-10-30', start: '23:00', end: '23:30' }); // 10/30 23:00〜23:30 は重ならない
+  assert.equal(r.saved.length, 1);
+  r = await bulk({ date: '2026-10-31', start: '21:00', end: '22:01' });
+  assert.equal(r.skipped.length, 1);
 });

@@ -1,14 +1,31 @@
 // 一括勤怠申請（旧 npasSaveBulkAttendance）
-// 同一スタッフ・同一勤務日の記録が既にある人はスキップ（上書きしない）。
+// 勤務時間帯が少しでも重なる記録が既にある人はスキップ（上書きしない）。
+// 時間帯が接するだけ（例：13:00〜17:00 と 17:00〜19:00）は重なりとみなさない。
 // 判定と登録は1つのSQL文で行うため、同時に申請されても重複登録されない。
 import { json, readJson, HttpError } from '../lib/http.js';
 import { requireStaff, assertSelf } from '../lib/auth.js';
-import { validateAttendance } from '../lib/validate.js';
+import { validateAttendance, minutesBetween } from '../lib/validate.js';
 import { uuid } from '../lib/crypto.js';
 import { nowIso } from '../lib/time.js';
 import { staffLabel } from '../lib/audit.js';
 
 export const BULK_MAX = 100;
+
+// 勤務時間帯を「2000-01-01 からの通算分」で表す（日付をまたぐ勤務も1本の時間帯になる）
+// 例：10/31 22:00〜02:00 → 10/31 22:00 から 11/1 02:00 まで
+const START_MIN = `(CAST(substr(a.start_time, 1, 2) AS INTEGER) * 60 + CAST(substr(a.start_time, 4, 2) AS INTEGER))`;
+const END_MIN = `(CAST(substr(a.end_time, 1, 2) AS INTEGER) * 60 + CAST(substr(a.end_time, 4, 2) AS INTEGER))`;
+const DAY_MIN = `(CAST(julianday(a.work_date) - julianday('2000-01-01') AS INTEGER) * 1440)`;
+export const ABS_START = `(${DAY_MIN} + ${START_MIN})`;
+export const ABS_END = `(${DAY_MIN} + ${START_MIN} + ((${END_MIN} - ${START_MIN} + 1440) % 1440))`;
+
+export function absSpan(date, start, end) {
+  const [y, m, d] = date.split('-').map(Number);
+  const day = Math.round((Date.UTC(y, m - 1, d) - Date.UTC(2000, 0, 1)) / 86400000);
+  const [h, mi] = start.split(':').map(Number);
+  const s = day * 1440 + h * 60 + mi;
+  return { start: s, end: s + minutesBetween(start, end) };
+}
 
 export async function saveBulk(env, request) {
   const startedAt = Date.now();
@@ -40,6 +57,7 @@ export async function saveBulk(env, request) {
   }
 
   const at = nowIso();
+  const span = absSpan(v.date, v.start, v.end);
   const rows = ids.map(id => ({ id: uuid(), sid: id, name: byId.get(id).name }));
   const t0 = Date.now();
   // 1文で「重複していない人だけ登録」し、登録できた人を RETURNING で受け取る
@@ -54,19 +72,41 @@ export async function saveBulk(env, request) {
        FROM json_each(?9) AS j
       WHERE NOT EXISTS (
         SELECT 1 FROM attendance a
-         WHERE a.staff_id = json_extract(j.value, '$.sid') AND a.work_date = ?1)
+         WHERE a.staff_id = json_extract(j.value, '$.sid')
+           AND a.work_date BETWEEN date(?1, '-1 day') AND date(?1, '+1 day')
+           AND ${ABS_START} < ?11 AND ?10 < ${ABS_END})
      RETURNING id, staff_id`
   )
-    .bind(v.date, v.start, v.end, v.br, v.task, v.allowance, v.hours, at, JSON.stringify(rows))
+    .bind(v.date, v.start, v.end, v.br, v.task, v.allowance, v.hours, at, JSON.stringify(rows), span.start, span.end)
     .all();
   const writeMs = Date.now() - t0;
 
   const savedIds = new Set(inserted.map(r => String(r.staff_id)));
   const saved = [];
   const skipped = [];
+  const skippedIds = rows.filter(r => !savedIds.has(r.sid)).map(r => r.sid);
+  // スキップした人について、重なった既存の記録を理由として示す
+  const clash = new Map();
+  if (skippedIds.length) {
+    const { results } = await env.DB.prepare(
+      `SELECT a.staff_id, a.work_date, a.start_time, a.end_time FROM attendance a
+        WHERE a.staff_id IN (SELECT value FROM json_each(?1))
+          AND a.work_date BETWEEN date(?2, '-1 day') AND date(?2, '+1 day')
+          AND ${ABS_START} < ?4 AND ?3 < ${ABS_END}
+        ORDER BY a.work_date, a.start_time`
+    )
+      .bind(JSON.stringify(skippedIds), v.date, span.start, span.end)
+      .all();
+    for (const c of results) if (!clash.has(String(c.staff_id))) clash.set(String(c.staff_id), c);
+  }
   for (const r of rows) {
-    if (savedIds.has(r.sid)) saved.push({ id: r.sid, name: r.name, recordId: r.id });
-    else skipped.push({ id: r.sid, name: r.name, reason: 'この勤務日の記録が既にあります' });
+    if (savedIds.has(r.sid)) {
+      saved.push({ id: r.sid, name: r.name, recordId: r.id });
+      continue;
+    }
+    const c = clash.get(r.sid);
+    const when = c ? `（${c.work_date.slice(5).replace('-', '/')} ${c.start_time}〜${c.end_time}）` : '';
+    skipped.push({ id: r.sid, name: r.name, reason: `勤務時間が重なる記録が既にあります${when}` });
   }
 
   // 代表者の操作履歴。失敗しても保存済みの勤怠は取り消さない（旧仕様と同じ）

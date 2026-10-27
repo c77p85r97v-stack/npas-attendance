@@ -18,7 +18,7 @@
 <section class="screen" id="bulkRequest"><header class="top"><button class="back" data-go="home">‹</button><strong class="page-title">👥 一括勤怠申請</strong><span style="width:35px"></span></header>
 <div class="section"><div class="card input-card">
 <h2 style="color:#173e68;margin:0 0 8px">みんなの勤怠をまとめて申請 💙💛</h2>
-<p style="font-size:13px;line-height:1.7">代表者：<b id="bulkOperator">―</b><br>同じ勤務日に既存記録がある人は自動でスキップします。既存の記録は上書きしません。</p>
+<p style="font-size:13px;line-height:1.7">代表者：<b id="bulkOperator">―</b><br>勤務時間が少しでも重なる記録がある人は自動でスキップします。既存の記録は上書きしません。</p>
 <div class="group"><label class="form-label">対象スタッフ（学年をまたいで選択できます）</label><div style="display:flex;gap:8px;margin-bottom:10px"><button type="button" class="secondary" id="bulkSelectAll" style="flex:1">全員選択</button><button type="button" class="secondary" id="bulkClear" style="flex:1">選択解除</button></div><div id="bulkPeople" style="max-height:270px;overflow:auto;border:1px solid #dce4ef;border-radius:12px;padding:8px">名簿を読み込み中…</div><p id="bulkCount" style="font-size:13px;font-weight:bold">0名選択中</p></div>
 <div class="group"><label class="form-label" for="bulkDate">勤務日</label><input class="field" type="date" id="bulkDate"></div>
 <div class="group"><label class="form-label" for="bulkStart">出勤時刻</label><input class="field" type="time" id="bulkStart" value="13:00"></div>

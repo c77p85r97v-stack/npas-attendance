@@ -114,6 +114,9 @@ await check('一括勤怠申請：2名選択 → 確認画面 → 申請 → 結
   await page.check('.npas-bulk-person[value="TEST01"]');
   await page.check('.npas-bulk-person[value="TEST02"]');
   assert.equal(await page.textContent('#bulkCount'), '2名選択中');
+  // TEST01 は 09:00〜12:30 の記録があるので、11:00〜14:00 は重なってスキップされる
+  await page.fill('#bulkStart', '11:00');
+  await page.fill('#bulkEnd', '14:00');
   await page.fill('#bulkTask', '一括テスト');
   await page.click('#bulkSubmit');
   await page.waitForSelector('#npasBulkConfirm', { state: 'visible' });
@@ -122,7 +125,7 @@ await check('一括勤怠申請：2名選択 → 確認画面 → 申請 → 結
   await page.click('#npasBulkConfirmOk');
   await page.waitForFunction(() => /一括申請結果/.test(document.getElementById('bulkResult').textContent));
   const t = await page.textContent('#bulkResult');
-  // TEST01 は今日すでに記録があるのでスキップ、TEST02 は登録
+  // TEST01 は時間が重なるのでスキップ、TEST02 は登録
   assert.match(t, /登録成功：1名\n・テスト 二子/);
   assert.match(t, /スキップ：1名\n・テスト 一郎/);
   await page.click('#bulkRequest .back');
