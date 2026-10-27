@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex">
+<title>N-PAS Attendance 管理画面</title>
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">N-PAS<small>Attendance 管理画面</small></div>
+  <div class="who"><span id="whoName"></span><span id="envBadge" class="env"></span><button type="button" id="logoutBtn" class="ghost" hidden>ログアウト</button></div>
+</header>
+
+<section id="loginView" class="wrap narrow" hidden>
+  <div class="card" id="setupCard" hidden>
+    <h2>初期設定：最初の管理者を作成</h2>
+    <p class="note">まだ管理者がいません。サーバーに設定した「初期設定用の合言葉（ADMIN_SETUP_TOKEN）」を入力して、最初の管理者を作ってください。作成後、この画面は表示されなくなります。</p>
+    <label>初期設定用の合言葉<input id="setupToken" type="password" autocomplete="off"></label>
+    <label>ログインID（半角英数字）<input id="setupLogin" autocomplete="username"></label>
+    <label>名前<input id="setupName"></label>
+    <label>パスワード（10文字以上）<input id="setupPassword" type="password" autocomplete="new-password"></label>
+    <button type="button" class="accent" id="setupBtn">管理者を作成</button>
+    <p class="error" id="setupError" role="alert"></p>
+  </div>
+  <div class="card">
+    <h2>管理者ログイン</h2>
+    <p class="note">スタッフ用の画面とは別のアカウントです。</p>
+    <label>ログインID<input id="loginId" autocomplete="username"></label>
+    <label>パスワード<input id="password" type="password" autocomplete="current-password"></label>
+    <button type="button" class="primary" id="loginBtn">ログイン</button>
+    <p class="error" id="loginError" role="alert"></p>
+    <p class="note"><a href="/">スタッフ用の画面へ</a></p>
+  </div>
+</section>
+
+<main id="appView" class="wrap" hidden>
+  <nav class="tabs" id="tabs">
+    <button type="button" data-tab="corrections" class="on">修正申請<span class="count" id="pendingCount"></span></button>
+    <button type="button" data-tab="summary">月別集計</button>
+    <button type="button" data-tab="personal">個人別申請書</button>
+    <button type="button" data-tab="records">勤怠記録</button>
+    <button type="button" data-tab="staff">スタッフ・PIN</button>
+    <button type="button" data-tab="audit">操作履歴</button>
+    <button type="button" data-tab="data">データ移行・バックアップ</button>
+  </nav>
+
+  <!-- 修正申請 -->
+  <section class="tab" id="tab-corrections">
+    <div class="bar">
+      <select id="corrStatus"><option value="申請中">申請中</option><option value="承認">承認</option><option value="却下">却下</option><option value="all">すべて（最新300件）</option></select>
+      <button type="button" id="corrReload">再読み込み</button>
+    </div>
+    <div id="corrList"></div>
+  </section>
+
+  <!-- 月別集計 -->
+  <section class="tab" id="tab-summary" hidden>
+    <div class="bar">
+      <button type="button" id="sumPrev" aria-label="前の月">‹</button>
+      <input type="month" id="sumMonth">
+      <button type="button" id="sumNext" aria-label="次の月">›</button>
+      <a class="button" id="sumCsv">この月をCSVで保存</a>
+      <a class="button" id="sumCsvAll" href="/api/admin/summary.csv?month=all">全月をCSVで保存</a>
+    </div>
+    <div class="scroll"><table class="grid" id="sumTable"></table></div>
+  </section>
+
+  <!-- 個人別勤怠申請書 -->
+  <section class="tab" id="tab-personal" hidden>
+    <div class="bar noprint">
+      <select id="perStaff"></select>
+      <button type="button" id="perPrev" aria-label="前の月">‹</button>
+      <input type="month" id="perMonth">
+      <button type="button" id="perNext" aria-label="次の月">›</button>
+      <button type="button" id="perPrint">印刷・PDF保存</button>
+    </div>
+    <div id="perSheet" class="sheet"></div>
+  </section>
+
+  <!-- 勤怠記録 -->
+  <section class="tab" id="tab-records" hidden>
+    <div class="bar">
+      <select id="recStaff"></select>
+      <input type="month" id="recMonth">
+      <button type="button" id="recLoad">表示</button>
+      <button type="button" id="recAdd" class="accent">＋ 記録を追加</button>
+    </div>
+    <p class="note">ここでの追加・修正・削除はすべて操作履歴に残ります（理由の入力が必要です）。スタッフからの修正は「修正申請」から承認してください。</p>
+    <div class="scroll"><table class="grid" id="recTable"></table></div>
+  </section>
+
+  <!-- スタッフ・PIN -->
+  <section class="tab" id="tab-staff" hidden>
+    <div class="bar">
+      <button type="button" id="staffAdd" class="accent">＋ スタッフを追加</button>
+      <button type="button" id="pinMissing">PIN未設定の人にまとめて発行</button>
+    </div>
+    <div id="pinResult"></div>
+    <div class="scroll"><table class="grid" id="staffTable"></table></div>
+    <div class="card" style="margin-top:14px">
+      <h3>管理者アカウント</h3>
+      <div id="adminList" class="note"></div>
+      <div class="bar"><button type="button" id="adminAdd">＋ 管理者を追加</button><button type="button" id="pwChange">自分のパスワードを変更</button></div>
+    </div>
+  </section>
+
+  <!-- 操作履歴 -->
+  <section class="tab" id="tab-audit" hidden>
+    <div class="scroll"><table class="grid small" id="auditTable"></table></div>
+    <button type="button" id="auditMore">さらに表示</button>
+  </section>
+
+  <!-- データ移行・バックアップ -->
+  <section class="tab" id="tab-data" hidden>
+    <div class="card">
+      <h3>バックアップ（書き出し）</h3>
+      <p class="note">全データ（スタッフ名簿・勤怠データ・修正履歴・打刻修正申請）を1つのファイルに保存します。PINは含まれません。このファイルは下の「データ移行」からそのまま復元できます。</p>
+      <button type="button" class="primary" id="backupBtn">バックアップをダウンロード</button> <span id="backupProgress" class="note"></span>
+    </div>
+    <div class="card">
+      <h3>データ移行（スプレッドシート → 新システム）</h3>
+      <ol class="note">
+        <li>旧システムで <code>npasExportForMigration</code> を実行して作ったJSONファイル、または各シートのCSV（複数可）を選びます。</li>
+        <li>「① 確認のみ」で問題がないか確認します（何も書き込みません）。</li>
+        <li>「② 取り込む」でデータを入れます（同じIDのデータは上書きしません。何度実行しても重複しません）。</li>
+        <li>「③ 照合する」で移行元と移行先が一致しているか確認します。</li>
+      </ol>
+      <input type="file" id="migFiles" accept=".json,.csv,application/json,text/csv" multiple>
+      <div id="migLoaded" class="note"></div>
+      <div class="bar">
+        <button type="button" id="migDry" disabled>① 確認のみ</button>
+        <button type="button" id="migImport" class="accent" disabled>② 取り込む</button>
+        <button type="button" id="migVerify" disabled>③ 照合する</button>
+      </div>
+      <div id="migProgress" class="note"></div>
+      <div id="migReport"></div>
+    </div>
+    <div class="card">
+      <h3>移行の実行記録</h3>
+      <div id="migRuns"></div>
+    </div>
+  </section>
+</main>
+
+<div class="modal" id="modal" hidden><div class="dialog" role="dialog" aria-modal="true"><h3 id="modalTitle"></h3><div id="modalBody"></div><div class="actions"><button type="button" id="modalCancel">キャンセル</button><button type="button" class="primary" id="modalOk">OK</button></div><p class="error" id="modalError" role="alert"></p></div></div>
+<div class="toast" id="toast" role="status"></div>
+<script type="module" src="/js/admin.js"></script>
+</body>
+</html>

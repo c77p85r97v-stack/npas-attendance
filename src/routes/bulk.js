@@ -1,0 +1,106 @@
+// 一括勤怠申請（旧 npasSaveBulkAttendance）
+// 同一スタッフ・同一勤務日の記録が既にある人はスキップ（上書きしない）。
+// 判定と登録は1つのSQL文で行うため、同時に申請されても重複登録されない。
+import { json, readJson, HttpError } from '../lib/http.js';
+import { requireStaff, assertSelf } from '../lib/auth.js';
+import { validateAttendance } from '../lib/validate.js';
+import { uuid } from '../lib/crypto.js';
+import { nowIso } from '../lib/time.js';
+import { staffLabel } from '../lib/audit.js';
+
+export const BULK_MAX = 100;
+
+export async function saveBulk(env, request) {
+  const startedAt = Date.now();
+  const operator = await requireStaff(env, request);
+  const body = await readJson(request);
+  assertSelf(operator, body.operatorId);
+
+  if (env.BULK_POLICY === 'disabled') throw new HttpError(403, '一括勤怠申請は現在利用できません。管理者に連絡してください');
+
+  const staffIds = body.staffIds;
+  if (!Array.isArray(staffIds) || staffIds.length === 0 || staffIds.length > BULK_MAX) {
+    throw new HttpError(400, '申請するスタッフを1〜100名選択してください');
+  }
+  const ids = staffIds.map(String);
+  if (ids.some(id => !id) || new Set(ids).size !== ids.length) {
+    throw new HttpError(400, 'スタッフの選択に重複または不正な値があります');
+  }
+  const v = validateAttendance(body);
+
+  // 有効なスタッフかどうかを1回の問い合わせで確認
+  const { results: found } = await env.DB.prepare(
+    'SELECT id, name FROM staff WHERE active = 1 AND id IN (SELECT value FROM json_each(?))'
+  )
+    .bind(JSON.stringify(ids))
+    .all();
+  const byId = new Map(found.map(r => [String(r.id), r]));
+  if (ids.some(id => !byId.has(id))) {
+    throw new HttpError(400, '名簿にないスタッフが選択されています。画面を更新してください');
+  }
+
+  const at = nowIso();
+  const rows = ids.map(id => ({ id: uuid(), sid: id, name: byId.get(id).name }));
+  const t0 = Date.now();
+  // 1文で「重複していない人だけ登録」し、登録できた人を RETURNING で受け取る
+  const { results: inserted } = await env.DB.prepare(
+    `INSERT INTO attendance
+       (id, staff_id, staff_name, work_date, start_time, end_time, break_min, task, allowance, hours,
+        method, row_order, client_request_id, source, created_at, updated_at)
+     SELECT json_extract(j.value, '$.id'), json_extract(j.value, '$.sid'), json_extract(j.value, '$.name'),
+            ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'bulk-manual',
+            (SELECT COALESCE(MAX(row_order), 0) FROM attendance) + j.key + 1,
+            NULL, 'app', ?8, ?8
+       FROM json_each(?9) AS j
+      WHERE NOT EXISTS (
+        SELECT 1 FROM attendance a
+         WHERE a.staff_id = json_extract(j.value, '$.sid') AND a.work_date = ?1)
+     RETURNING id, staff_id`
+  )
+    .bind(v.date, v.start, v.end, v.br, v.task, v.allowance, v.hours, at, JSON.stringify(rows))
+    .all();
+  const writeMs = Date.now() - t0;
+
+  const savedIds = new Set(inserted.map(r => String(r.staff_id)));
+  const saved = [];
+  const skipped = [];
+  for (const r of rows) {
+    if (savedIds.has(r.sid)) saved.push({ id: r.sid, name: r.name, recordId: r.id });
+    else skipped.push({ id: r.sid, name: r.name, reason: 'この勤務日の記録が既にあります' });
+  }
+
+  // 代表者の操作履歴。失敗しても保存済みの勤怠は取り消さない（旧仕様と同じ）
+  let auditWarning = '';
+  if (saved.length) {
+    try {
+      await env.DB.prepare(
+        'INSERT INTO audit_log (at, action, record_id, operator, before_json, after_json) VALUES (?, ?, ?, ?, ?, ?)'
+      )
+        .bind(
+          nowIso(),
+          '一括勤怠申請',
+          saved.map(s => s.recordId).join(','),
+          staffLabel(operator),
+          '',
+          JSON.stringify({
+            date: v.date,
+            start: v.start,
+            end: v.end,
+            breakMin: v.br,
+            task: v.task,
+            allowance: v.allowance == null ? '' : v.allowance,
+            staff: saved.map(s => ({ id: s.id, name: s.name })),
+            skipped: skipped.map(s => s.id),
+          })
+        )
+        .run();
+    } catch (e) {
+      auditWarning = '勤怠は保存されましたが、代表者の操作履歴を記録できませんでした。管理者に確認してください。';
+      console.error('N-PAS 一括申請の監査履歴エラー:', e && e.message);
+    }
+  }
+  console.log(
+    'NPAS bulk timing: ' + JSON.stringify({ totalMs: Date.now() - startedAt, writeMs, saved: saved.length, skipped: skipped.length })
+  );
+  return json({ saved, skipped, workDate: v.date, operator: operator.name, auditWarning, summaryUpdated: false });
+}

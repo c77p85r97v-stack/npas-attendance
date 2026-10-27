@@ -1,0 +1,84 @@
+/* N-PAS 管理画面（スタッフ画面と同じ色・フォントを使用） */
+:root{--navy:#10365e;--navy2:#0a2949;--cream:#fffdf5;--yellow:#ffdf28;--line:#dce5ed;--text:#10345c;--pale:#eef3f9;--red:#a52b30;--green:#186442}
+*{box-sizing:border-box}
+body{margin:0;background:#e9edf1;color:var(--text);font-family:system-ui,-apple-system,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-weight:600;font-size:14px}
+button,select,input,textarea{font:inherit;color:inherit}
+button,.button{cursor:pointer;border:1px solid #c8d4e0;background:#fff;border-radius:10px;padding:8px 12px;text-decoration:none;display:inline-block;color:var(--navy)}
+button:disabled{opacity:.5;cursor:not-allowed}
+.primary{background:linear-gradient(120deg,#0f467a,#0a2b4d);color:#fff;border:0}
+.accent{background:var(--yellow);border-color:#f2d65b;color:#092c4e}
+.danger{color:var(--red);border-color:#e7b7b9}
+.ghost{background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.55);color:#fff;padding:6px 10px}
+input,select,textarea{border:1.5px solid #d8e1eb;border-radius:10px;padding:8px 10px;background:#fff;outline-color:#facf29}
+label{display:block;margin:10px 0}
+label input,label select,label textarea{display:block;width:100%;margin-top:4px}
+.top{background:linear-gradient(135deg,#164776,#082c51);color:#fff;display:flex;align-items:center;justify-content:space-between;padding:12px 18px;gap:10px;flex-wrap:wrap}
+.brand{font-size:22px;font-weight:900;line-height:1}
+.brand small{display:block;color:var(--yellow);font-size:11px;margin-top:4px}
+.who{display:flex;gap:10px;align-items:center;font-size:13px}
+.env{background:var(--yellow);color:#092c4e;border-radius:8px;padding:2px 8px;font-size:11px}
+.env:empty{display:none}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.narrow{max-width:420px}
+.card{background:#fff;border-radius:16px;padding:16px 18px;box-shadow:0 4px 15px #17385810;margin-bottom:14px}
+.card h2,.card h3{margin:0 0 8px}
+.note{color:#5b6f84;font-size:12px;font-weight:500;line-height:1.7}
+.error{color:var(--red);white-space:pre-wrap;font-size:13px}
+.ok{color:var(--green)}
+.warn{color:#8a5a00}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tabs button{border-radius:30px;padding:8px 14px}
+.tabs button.on{background:#134f85;color:#fff;border-color:#134f85}
+.count{background:var(--yellow);color:#092c4e;border-radius:10px;padding:0 7px;margin-left:6px;font-size:12px}
+.count:empty{display:none}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.scroll{overflow:auto;background:#fff;border-radius:14px;box-shadow:0 2px 8px #1535530c}
+table.grid{border-collapse:collapse;width:100%;font-size:13px}
+.grid th{background:#162b4b;color:#fff;padding:8px;text-align:center;white-space:nowrap;position:sticky;top:0}
+.grid td{padding:7px 8px;border-bottom:1px solid #edf0f4;vertical-align:top}
+.grid tr:nth-child(even) td{background:#f1f5fa}
+.grid td.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.grid td.c{text-align:center;white-space:nowrap}
+.grid.small td{font-size:12px;font-weight:500}
+.grid tfoot td{background:#fff4ba!important;font-weight:800}
+.req{background:#fff;border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:0 2px 8px #1535530c}
+.req .head{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.diff{display:grid;grid-template-columns:auto 1fr 1fr;gap:2px 12px;margin:10px 0;font-size:13px}
+.diff .changed{background:#fff4ba}
+.diff b{color:#526579;font-size:12px}
+.tag{border-radius:8px;padding:2px 8px;font-size:12px;background:var(--pale)}
+.tag.pending{background:#fff4ba}.tag.done{background:#dff3e8}.tag.rej{background:#f9e0e1}
+pre.json{white-space:pre-wrap;word-break:break-all;font-size:11px;margin:0;max-width:340px}
+.modal{position:fixed;inset:0;background:rgba(8,28,52,.72);display:flex;align-items:center;justify-content:center;padding:18px;z-index:50}
+.modal[hidden]{display:none}
+.dialog{background:#fff;border-radius:18px;padding:20px;width:100%;max-width:460px;max-height:90vh;overflow:auto}
+.actions{display:flex;gap:10px;margin-top:14px}
+.actions button{flex:1;padding:11px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#133c66;color:#fff;border-radius:13px;padding:12px 18px;z-index:60;display:none;max-width:90vw}
+.pinlist{border:2px dashed #f2d65b;background:#fffbe6;border-radius:14px;padding:12px;margin-bottom:12px}
+/* 個人別勤怠申請書（旧 個人_ シートのレイアウト） */
+.sheet{background:#fff;padding:18px;border-radius:6px;max-width:820px;font-family:Arial,'Hiragino Kaku Gothic ProN','Yu Gothic',sans-serif;font-weight:400;color:#000}
+.sheet .title{display:grid;grid-template-columns:auto auto 1fr;align-items:center;gap:12px;margin-bottom:10px}
+.sheet .ym{font-size:16px}.sheet .ym b{background:#ffe55d;padding:2px 8px}
+.sheet h1{font-size:22px;text-align:center;margin:0;letter-spacing:.4em;font-weight:700}
+.sheet .info{display:grid;grid-template-columns:1fr 2fr 1.4fr;gap:8px;margin:6px 0}
+.sheet .sub{color:#526579;font-size:11px;margin-bottom:8px}
+.sheet table{border-collapse:collapse;width:100%;font-size:12px}
+.sheet th,.sheet td{border:1px solid #ccd6e1;padding:4px 6px;height:30px}
+.sheet th{background:#162b4b;color:#fff;font-weight:700}
+.sheet tr.even td{background:#eef3f9}
+.sheet td.t{white-space:pre-line;width:40%}
+.sheet td.n{text-align:right;font-variant-numeric:tabular-nums}
+.sheet td.cc{text-align:center;white-space:pre-line}
+.sheet .totals{display:grid;grid-template-columns:1fr 140px 140px;margin-top:10px}
+.sheet .totals div{border:1px solid #ccd6e1;padding:6px;text-align:center}
+.sheet .totals .h{background:#162b4b;color:#fff;font-weight:700}
+.sheet .totals .v{background:#fff4ba;font-weight:700;font-size:16px}
+@media print{
+  body{background:#fff}
+  .top,.tabs,.noprint,.toast{display:none!important}
+  .wrap{padding:0;max-width:none}
+  .sheet{box-shadow:none;padding:0;max-width:none}
+  .sheet th,.sheet tr.even td,.sheet .totals .h,.sheet .totals .v,.sheet .ym b{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4;margin:12mm}
+}

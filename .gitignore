@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.local/
+.dev.vars
+backups/
+*.sqlite
+.vercel/

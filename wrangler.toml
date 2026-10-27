@@ -1,0 +1,40 @@
+# N-PAS Attendance クラウド版の設定（Cloudflare Workers + D1）
+# 「REPLACE_WITH_...」の部分は、README の手順でデータベースを作ったときに表示されるIDに置き換えます。
+name = "npas-attendance"
+main = "src/index.js"
+compatibility_date = "2026-06-01"
+
+# 画面のファイル（HTML・画像・JavaScript）。ここにあるファイルは Worker を通さず直接配信される（無料・高速）
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+# エラーや応答時間のログを Cloudflare の管理画面で見られるようにする
+[observability]
+enabled = true
+
+# ---------- テスト環境（動作確認用。本物のデータは入れない） ----------
+[env.staging]
+name = "npas-attendance-staging"
+vars = { ENVIRONMENT = "staging", ALLOW_TEST_TOOLS = "true", BULK_POLICY = "all" }
+
+[[env.staging.d1_databases]]
+binding = "DB"
+database_name = "npas-attendance-staging"
+database_id = "REPLACE_WITH_STAGING_DATABASE_ID"
+migrations_dir = "migrations"
+
+# ---------- 本番環境 ----------
+[env.production]
+name = "npas-attendance"
+vars = { ENVIRONMENT = "production", ALLOW_TEST_TOOLS = "false", BULK_POLICY = "all" }
+
+[[env.production.d1_databases]]
+binding = "DB"
+database_name = "npas-attendance"
+database_id = "REPLACE_WITH_PRODUCTION_DATABASE_ID"
+migrations_dir = "migrations"
+
+# 秘密の値（ソースコードには書かない。README の手順で wrangler secret put で設定する）
+#   PIN_PEPPER        … PIN・パスワードのハッシュに混ぜる秘密の値（16文字以上）
+#   ADMIN_SETUP_TOKEN … 最初の管理者を作るときの合言葉（16文字以上）

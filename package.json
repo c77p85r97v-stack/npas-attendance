@@ -1,0 +1,27 @@
+{
+  "name": "npas-attendance",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "description": "N-PAS Attendance クラウド版（Cloudflare Workers + D1）",
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "test:ui": "node test/ui/e2e.mjs",
+    "start": "node tools/dev-server.mjs",
+    "bench": "node tools/bench.mjs 20000",
+    "dev": "wrangler dev --env staging",
+    "db:migrate:dev": "wrangler d1 migrations apply npas-attendance-staging --local --env staging",
+    "db:migrate:staging": "wrangler d1 migrations apply npas-attendance-staging --remote --env staging",
+    "db:migrate:production": "wrangler d1 migrations apply npas-attendance --remote --env production",
+    "deploy:staging": "wrangler deploy --env staging",
+    "deploy:production": "wrangler deploy --env production",
+    "backup:staging": "node tools/backup.mjs staging",
+    "backup:production": "node tools/backup.mjs production"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

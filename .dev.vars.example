@@ -1,0 +1,5 @@
+# wrangler dev（ローカル）で使う秘密の値の例。.dev.vars という名前でコピーして使う。
+PIN_PEPPER=local-dev-pepper-0123456789
+ADMIN_SETUP_TOKEN=local-setup-token-0123456789
+ENVIRONMENT=development
+ALLOW_TEST_TOOLS=true
