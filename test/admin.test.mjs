@@ -423,3 +423,47 @@ test('出勤中のスタッフ一覧（退勤忘れの確認）：経過時間�
   assert.ok(r.data.staff[0].hours > 0);
   assert.equal((await s1.get('/api/admin/clocked-in')).status, 401);
 });
+
+test('名前だけのログイン：データベースに書き込まない（速い）・改ざんした Cookie は無効', async () => {
+  const env = await setup({ extra: { AUTH_MODE: 'name' } });
+  const before = env.DB.db.prepare('SELECT total_changes() AS n').get().n;
+  const c = new Client(env);
+  assert.equal((await c.post('/api/login', { staffId: 'S001' })).status, 200);
+  assert.equal(env.DB.db.prepare('SELECT total_changes() AS n').get().n, before, 'ログインで書き込みが発生した');
+  assert.equal((await c.get('/api/me')).data.user.id, 'S001');
+  // 他人のIDに書き換えた Cookie は無効
+  const [k, v] = [...c.cookies][0];
+  const parts = v.split('.');
+  parts[1] = Buffer.from('S002').toString('base64url');
+  const bad = new Client(env);
+  bad.cookies.set(k, parts.join('.'));
+  assert.equal((await bad.get('/api/me')).status, 401);
+  // 無効にしたスタッフは使えない
+  await env.DB.prepare("UPDATE staff SET active = 0 WHERE id = 'S001'").run();
+  assert.equal((await c.get('/api/me')).status, 401);
+  await env.DB.prepare("UPDATE staff SET active = 1 WHERE id = 'S001'").run();
+  // PIN方式に切り替えたら、名前だけで作った Cookie は使えない
+  env.AUTH_MODE = 'pin';
+  assert.equal((await c.get('/api/me')).status, 401);
+});
+
+test('個人別勤怠申請書のまとめ取得：学年ごと・全員、1人ずつ正しく分かれる', async () => {
+  const env = await setup();
+  const s1 = await loginAs(env, 'S001');
+  const s3 = await loginAs(env, 'S003');
+  await s1.post('/api/attendance', base({ date: '2026-10-03' }));
+  await s3.post('/api/attendance', base({ date: '2026-10-04', start: '09:00', end: '12:00' }));
+  const a = await adminClient(env);
+  const g2 = (await a.get('/api/admin/personal-batch?grade=2&month=2026-10')).data;
+  assert.deepEqual(g2.sheets.map(x => x.staff.grade), ['2', '2']);
+  const s001 = g2.sheets.find(x => x.staff.id === 'S001');
+  assert.equal(s001.totals.hours, 5);
+  assert.equal(g2.sheets.find(x => x.staff.id === 'S002').totals.hours, 0);
+  const allSheets = (await a.get('/api/admin/personal-batch?grade=all&month=2026-10')).data.sheets;
+  assert.equal(allSheets.length, 4); // 有効なスタッフのみ
+  assert.equal(allSheets.find(x => x.staff.id === 'S003').totals.hours, 3);
+  // 1人分の取得と同じ内容
+  const one = (await a.get('/api/admin/personal?staffId=S001&month=2026-10')).data;
+  assert.deepEqual(s001, one);
+  assert.equal((await s1.get('/api/admin/personal-batch?grade=2&month=2026-10')).status, 401);
+});

@@ -317,11 +317,8 @@ $('sumNext').onclick = () => {
 };
 
 // ---------- 個人別勤怠申請書 ----------
-loaders.personal = async () => {
-  if (!$('perMonth').value) $('perMonth').value = thisMonth();
-  const sid = $('perStaff').value;
-  if (!sid) return;
-  const d = await get(`/api/admin/personal?staffId=${encodeURIComponent(sid)}&month=${encodeURIComponent($('perMonth').value)}`);
+/** 個人別勤怠申請書1枚分の要素を作る（旧 個人_ シートのレイアウト） */
+function personalSheet(d) {
   const [y, m] = d.month.split('-');
   const rows = d.days.map(x =>
     h(
@@ -337,7 +334,9 @@ loaders.personal = async () => {
       h('td', { class: 'n' }, x.records.length ? yen(x.allowance) : '')
     )
   );
-  $('perSheet').replaceChildren(
+  return h(
+    'div',
+    { class: 'sheet' },
     h('div', { class: 'title' }, h('div', { class: 'ym' }, `${y} 年 `, h('b', {}, `${m} 月`)), h('span'), h('h1', {}, '勤 怠 申 請 書')),
     h('div', { class: 'info' }, h('div', {}, `学年：${d.staff.grade}年`), h('div', {}, `氏名：${d.staff.name}（${d.staff.nick}）`), h('div', {}, '所属：N-PAS')),
     h('div', { class: 'sub' }, `勤怠データと自動連動（個人ID ${d.staff.id}）`),
@@ -349,6 +348,42 @@ loaders.personal = async () => {
     ),
     h('div', { class: 'totals' }, h('div', { style: 'border:0' }), h('div', { class: 'h' }, '勤務時間合計'), h('div', { class: 'h' }, '手当合計'), h('div', { style: 'border:0' }), h('div', { class: 'v' }, hrs(d.totals.hours)), h('div', { class: 'v' }, yen(d.totals.allowance)))
   );
+}
+
+function fillGradeOptions() {
+  const grades = [...new Set(staffCache.filter(s => s.active).map(s => s.grade))].sort((a, b) => Number(b) - Number(a));
+  const cur = $('perGrade').value;
+  $('perGrade').replaceChildren(...grades.map(g => h('option', { value: g }, `${g}年生（${staffCache.filter(s => s.active && s.grade === g).length}名）`)), h('option', { value: 'all' }, '全員'));
+  if (cur) $('perGrade').value = cur;
+}
+
+loaders.personal = async () => {
+  if (!$('perMonth').value) $('perMonth').value = thisMonth();
+  fillGradeOptions();
+  const sid = $('perStaff').value;
+  if (!sid) return;
+  const d = await get(`/api/admin/personal?staffId=${encodeURIComponent(sid)}&month=${encodeURIComponent($('perMonth').value)}`);
+  $('perSheet').replaceChildren(personalSheet(d));
+};
+$('perPrintGrade').onclick = async () => {
+  const grade = $('perGrade').value;
+  const month = $('perMonth').value || thisMonth();
+  $('perPrintGrade').disabled = true;
+  $('perBatchNote').textContent = '準備中…';
+  try {
+    const r = await get(`/api/admin/personal-batch?grade=${encodeURIComponent(grade)}&month=${encodeURIComponent(month)}`);
+    if (!r.sheets.length) {
+      $('perBatchNote').textContent = 'この学年のスタッフがいません。';
+      return;
+    }
+    $('perSheet').replaceChildren(...r.sheets.map(personalSheet));
+    $('perBatchNote').textContent = `${r.sheets.length}名分を表示しました（${month}）。印刷画面を開きます。`;
+    setTimeout(() => window.print(), 300);
+  } catch (e) {
+    $('perBatchNote').textContent = 'エラー：' + e.message;
+  } finally {
+    $('perPrintGrade').disabled = false;
+  }
 };
 $('perStaff').onchange = () => loaders.personal();
 $('perMonth').onchange = () => loaders.personal();

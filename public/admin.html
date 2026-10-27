@@ -78,7 +78,12 @@
       <button type="button" id="perPrev" aria-label="前の月">‹</button>
       <input type="month" id="perMonth">
       <button type="button" id="perNext" aria-label="次の月">›</button>
-      <button type="button" id="perPrint">印刷・PDF保存</button>
+      <button type="button" id="perPrint">この人を印刷・PDF保存</button>
+    </div>
+    <div class="bar noprint">
+      <select id="perGrade" aria-label="まとめて印刷する学年"></select>
+      <button type="button" class="accent" id="perPrintGrade">選んだ学年をまとめて印刷</button>
+      <span class="note" id="perBatchNote">1人1ページで、同じ月の申請書をまとめて印刷します。</span>
     </div>
     <div id="perSheet" class="sheet"></div>
   </section>

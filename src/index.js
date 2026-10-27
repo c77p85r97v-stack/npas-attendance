@@ -64,6 +64,7 @@ const ROUTES = [
   ['GET', /^\/api\/admin\/summary$/, (env, req) => reports.summary(env, req)],
   ['GET', /^\/api\/admin\/summary\.csv$/, (env, req) => reports.summaryCsv(env, req)],
   ['GET', /^\/api\/admin\/personal$/, (env, req) => reports.personal(env, req)],
+  ['GET', /^\/api\/admin\/personal-batch$/, (env, req) => reports.personalBatch(env, req)],
   ['GET', /^\/api\/admin\/export$/, (env, req) => reports.exportAll(env, req)],
   ['GET', /^\/api\/admin\/export\/page$/, (env, req) => reports.exportPage(env, req)],
   ['POST', /^\/api\/admin\/migrate$/, (env, req) => migrate.migrateChunk(env, req)],

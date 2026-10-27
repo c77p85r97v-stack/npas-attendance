@@ -3,7 +3,7 @@ import { json, HttpError } from '../lib/http.js';
 import { requireAdmin } from '../lib/auth.js';
 import { checkMonth, monthRange } from '../lib/validate.js';
 import { jstMonth, nowIso } from '../lib/time.js';
-import { fetchMonthEntries } from './attendance.js';
+import { fetchMonthEntries, rowToEntry } from './attendance.js';
 
 const collator = new Intl.Collator('ja');
 
@@ -106,15 +106,8 @@ export async function summaryCsv(env, request) {
 
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 
-/** 個人別勤怠申請書（旧 個人_ シート）：1人・1か月分の日別表 */
-export async function personal(env, request) {
-  await requireAdmin(env, request);
-  const url = new URL(request.url);
-  const month = checkMonth(url.searchParams.get('month') || jstMonth());
-  const staffId = String(url.searchParams.get('staffId') || '');
-  const s = await env.DB.prepare('SELECT id, name, nick, grade, active FROM staff WHERE id = ?').bind(staffId).first();
-  if (!s) throw new HttpError(404, 'スタッフが見つかりません');
-  const entries = await fetchMonthEntries(env, s.id, month);
+/** 1人・1か月分の日別表を組み立てる */
+function buildPersonal(s, month, entries) {
   const [y, m] = month.split('-').map(Number);
   const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const days = [];
@@ -133,7 +126,7 @@ export async function personal(env, request) {
       records: list,
     });
   }
-  return json({
+  return {
     staff: { id: String(s.id), name: s.name, nick: s.nick, grade: String(s.grade), active: !!s.active },
     month,
     days,
@@ -141,7 +134,45 @@ export async function personal(env, request) {
       hours: round2(entries.reduce((a, e) => a + e.hours, 0)),
       allowance: entries.reduce((a, e) => a + (Number(e.allowance) || 0), 0),
     },
-  });
+  };
+}
+
+/** 個人別勤怠申請書（旧 個人_ シート）：1人・1か月分の日別表 */
+export async function personal(env, request) {
+  await requireAdmin(env, request);
+  const url = new URL(request.url);
+  const month = checkMonth(url.searchParams.get('month') || jstMonth());
+  const staffId = String(url.searchParams.get('staffId') || '');
+  const s = await env.DB.prepare('SELECT id, name, nick, grade, active FROM staff WHERE id = ?').bind(staffId).first();
+  if (!s) throw new HttpError(404, 'スタッフが見つかりません');
+  const entries = await fetchMonthEntries(env, s.id, month);
+  return json(buildPersonal(s, month, entries));
+}
+
+/**
+ * 個人別勤怠申請書をまとめて取得（学年ごと、または全員）。印刷用。
+ * 有効なスタッフを、旧集計と同じ並び（学年の大きい順 → 氏名順）で返す。問い合わせは2回だけ。
+ */
+export async function personalBatch(env, request) {
+  await requireAdmin(env, request);
+  const url = new URL(request.url);
+  const month = checkMonth(url.searchParams.get('month') || jstMonth());
+  const grade = String(url.searchParams.get('grade') || 'all');
+  const all = (await env.DB.prepare('SELECT id, name, nick, grade, active FROM staff WHERE active = 1').all()).results;
+  const staff = sortStaff(all.map(r => ({ ...r, id: String(r.id), grade: String(r.grade) }))).filter(r => grade === 'all' || r.grade === grade);
+  if (!staff.length) return json({ month, grade, sheets: [] });
+  const [from, to] = monthRange(month);
+  const { results } = await env.DB.prepare(
+    `SELECT staff_id, id, work_date, start_time, end_time, break_min, task, allowance, hours, method
+       FROM attendance
+      WHERE staff_id IN (SELECT value FROM json_each(?)) AND work_date >= ? AND work_date < ?
+      ORDER BY row_order`
+  )
+    .bind(JSON.stringify(staff.map(s => s.id)), from, to)
+    .all();
+  const by = new Map(staff.map(s => [s.id, []]));
+  for (const r of results) by.get(String(r.staff_id))?.push(rowToEntry(r));
+  return json({ month, grade, sheets: staff.map(s => buildPersonal(s, month, by.get(s.id))) });
 }
 
 /**

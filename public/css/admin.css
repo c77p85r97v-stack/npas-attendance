@@ -75,7 +75,11 @@ pre.json{white-space:pre-wrap;word-break:break-all;font-size:11px;margin:0;max-w
 .sheet .totals div{border:1px solid #ccd6e1;padding:6px;text-align:center}
 .sheet .totals .h{background:#162b4b;color:#fff;font-weight:700}
 .sheet .totals .v{background:#fff4ba;font-weight:700;font-size:16px}
+.sheet + .sheet{margin-top:18px}
 @media print{
+  .sheet{break-after:page;page-break-after:always}
+  .sheet:last-child{break-after:auto;page-break-after:auto}
+  .sheet + .sheet{margin-top:0}
   body{background:#fff}
   .top,.tabs,.noprint,.toast{display:none!important}
   .wrap{padding:0;max-width:none}

@@ -41,6 +41,39 @@ export function clearCookie(name) {
   return cookieHeader(name, '', 0);
 }
 
+// ---- 名前だけの方式のログイン状態：サーバーに保存しない「署名付き Cookie」----
+// データベースへの書き込みが起きないので、ログインが速い。
+// 形式：s1.<スタッフID(base64url)>.<有効期限(ミリ秒)>.<署名>
+const te = new TextEncoder();
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64uText = t => b64u(te.encode(t));
+function unb64uText(s) {
+  const b = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
+  return new TextDecoder().decode(Uint8Array.from(b, c => c.charCodeAt(0)));
+}
+async function hmac(env, text) {
+  const key = await crypto.subtle.importKey('raw', te.encode(pepper(env) + '\u0000staff-session'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64u(await crypto.subtle.sign('HMAC', key, te.encode(text)));
+}
+async function signedStaffCookie(env, staffId) {
+  const exp = Date.now() + STAFF_TTL_MS;
+  const body = `s1.${b64uText(staffId)}.${exp}`;
+  return cookieHeader(STAFF_COOKIE, `${body}.${await hmac(env, body)}`, Math.floor(STAFF_TTL_MS / 1000));
+}
+async function verifySignedStaff(env, token) {
+  const parts = token.split('.');
+  if (parts.length !== 4 || parts[0] !== 's1') return null;
+  const body = parts.slice(0, 3).join('.');
+  const { safeEqual } = await import('./crypto.js');
+  if (!safeEqual(parts[3], await hmac(env, body))) return null;
+  if (!(Number(parts[2]) > Date.now())) return null;
+  try {
+    return unb64uText(parts[1]);
+  } catch {
+    return null;
+  }
+}
+
 async function createSession(env, kind, subjectId) {
   const token = randomToken();
   const now = Date.now();
@@ -58,6 +91,7 @@ async function createSession(env, kind, subjectId) {
 
 export async function destroySession(env, request, kind) {
   const token = readCookie(request, kind === 'admin' ? ADMIN_COOKIE : STAFF_COOKIE);
+  if (token && token.startsWith('s1.')) return; // 署名付き Cookie はサーバー側に保存していない（Cookie を消すだけ）
   if (token) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256Hex(token)).run();
 }
 
@@ -105,7 +139,7 @@ export async function staffLogin(env, staffId, pin) {
   if (authMode(env) === 'name') {
     const u = await env.DB.prepare('SELECT id, name, nick, grade FROM staff WHERE id = ? AND active = 1').bind(staffId).first();
     if (!u) throw new HttpError(401, 'スタッフが見つかりません。名簿を確認してください');
-    const cookie = await createSession(env, 'staff', u.id);
+    const cookie = await signedStaffCookie(env, String(u.id));
     return { user: { id: u.id, name: u.name, nick: u.nick, grade: u.grade }, cookie };
   }
   if (!/^\d{4,6}$/.test(pin)) throw new HttpError(400, 'PINは4〜6桁の数字で入力してください');
@@ -161,6 +195,13 @@ export async function adminLogin(env, loginId, password) {
 export async function requireStaff(env, request) {
   const token = readCookie(request, STAFF_COOKIE);
   if (!token) throw new HttpError(401, 'ログインしてください（もう一度名前とPINを入力してください）');
+  if (token.startsWith('s1.')) {
+    // 名前だけの方式：署名を確かめ、名簿で有効なスタッフかを確認する（PIN方式に切り替えたら無効）
+    const sid = authMode(env) === 'name' ? await verifySignedStaff(env, token) : null;
+    const st = sid ? await env.DB.prepare('SELECT id, name, nick, grade FROM staff WHERE id = ? AND active = 1').bind(sid).first() : null;
+    if (!st) throw new HttpError(401, 'ログインの有効期限が切れました。ログアウトしてもう一度ログインしてください');
+    return { id: String(st.id), name: st.name, nick: st.nick, grade: String(st.grade) };
+  }
   const u = await env.DB.prepare(
     `SELECT st.id, st.name, st.nick, st.grade
        FROM sessions s JOIN staff st ON st.id = s.subject_id

@@ -202,6 +202,19 @@ await check('管理画面：個人別勤怠申請書', async () => {
   assert.match(await admin.textContent('#perSheet'), /氏名：テスト 一郎（いちろう）/);
   await admin.screenshot({ path: join(out, 'admin-personal.png'), fullPage: true });
 });
+await check('管理画面：学年ごとにまとめて印刷（1人1ページ）', async () => {
+  await admin.evaluate(() => (window.print = () => (window.__printed = true)));
+  await admin.selectOption('#perGrade', '1');
+  await admin.click('#perPrintGrade');
+  await admin.waitForFunction(() => window.__printed === true);
+  const n = await admin.$$eval('#perSheet .sheet', els => els.length);
+  assert.equal(n, 2); // TEST01・TEST02（1年生）
+  assert.match(await admin.textContent('#perSheet'), /テスト 一郎.*テスト 二子|テスト 二子.*テスト 一郎/s);
+  await admin.emulateMedia({ media: 'print' });
+  const brk = await admin.$eval('#perSheet .sheet', el => getComputedStyle(el).breakAfter);
+  assert.equal(brk, 'page');
+  await admin.emulateMedia({ media: 'screen' });
+});
 await check('削除申請：スタッフが申請 → 管理者が承認すると記録が消える', async () => {
   await page.selectOption('#grade', '1');
   await page.selectOption('#person', 'TEST01');

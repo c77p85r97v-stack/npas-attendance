@@ -10,7 +10,11 @@
     return Array.from(a, b => b.toString(16).padStart(2, '0')).join('');
   }
 
+  // ログインの通信中は、ほかの通信をその完了まで待たせる（すぐにホーム画面を出すため）
+  let loginPending = null;
+
   async function http(method, path, body) {
+    if (loginPending && path !== '/api/login') await loginPending.catch(() => {});
     let res;
     try {
       res = await fetch(path, {
@@ -61,7 +65,14 @@
     // ログイン画面の名簿と設定は1回の通信でまとめて受け取る（失敗したら次回やり直す）
     listStaff: () => boot().then(b => b.staff),
     config: () => boot().then(b => b.config),
-    login: (staffId, pin) => http('POST', '/api/login', { staffId, pin }),
+    login: (staffId, pin) => {
+      const p = http('POST', '/api/login', { staffId, pin });
+      loginPending = p;
+      p.finally(() => {
+        if (loginPending === p) loginPending = null;
+      }).catch(() => {});
+      return p;
+    },
     logout: () => http('POST', '/api/logout', {}),
     // 本人の特定はログイン時のCookieで行う（スタッフIDはサーバー側で照合のみ）
     clockStatus: staffId => http('GET', '/api/clock/status?staffId=' + encodeURIComponent(staffId)),
