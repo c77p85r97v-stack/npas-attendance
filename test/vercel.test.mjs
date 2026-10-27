@@ -161,3 +161,29 @@ test('Vercel版：テスト記録の初期化→バックアップから復元�
   assert.equal(ok.status, 200);
   assert.ok([...blob.store.keys()].some(k => k.endsWith('-daily.sqlite')));
 });
+
+test('Vercel版：初期名簿（STAFF_SEED_JSON）は名簿が空のときだけ1回登録され、ID・学年・有効を保つ', async () => {
+  const saved = { t: process.env.ALLOW_TEST_TOOLS, e: process.env.ENVIRONMENT };
+  process.env.ALLOW_TEST_TOOLS = 'false';
+  process.env.ENVIRONMENT = 'production';
+  process.env.AUTH_MODE = 'name';
+  process.env.STAFF_SEED_JSON = JSON.stringify([
+    { id: 'S001', name: 'サンプル', nick: 's', grade: 1, active: false },
+    { id: 'S002', name: '架空 花子', nick: 'はな', grade: 2.0, active: true },
+  ]);
+  try {
+    const blob = fakeBlob();
+    const c = client([createApp(blob)]);
+    const r = await c('GET', '/api/staff');
+    assert.deepEqual(r.data, [{ id: 'S002', name: '架空 花子', nick: 'はな', grade: '2' }]);
+    assert.equal((await c('POST', '/api/login', { staffId: 'S002' })).status, 200);
+    process.env.STAFF_SEED_JSON = JSON.stringify([{ id: 'S099', name: '別', grade: 1 }]);
+    const c2 = client([createApp(blob)]);
+    assert.deepEqual((await c2('GET', '/api/staff')).data.map(s => s.id), ['S002']);
+  } finally {
+    delete process.env.STAFF_SEED_JSON;
+    delete process.env.AUTH_MODE;
+    process.env.ALLOW_TEST_TOOLS = saved.t;
+    process.env.ENVIRONMENT = saved.e;
+  }
+});

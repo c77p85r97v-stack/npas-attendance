@@ -12,6 +12,7 @@ import { randomUUID } from 'node:crypto';
 import { D1Node } from '../../tools/d1-node.mjs';
 import worker from '../../src/index.js';
 import { resetTestData, testToolsEnabled } from '../../src/routes/testtools.js';
+import { applyStaffSeed } from '../../src/routes/seed.js';
 
 const BLOB_PATH = 'npas/attendance.sqlite';
 const BACKUP_PREFIX = 'npas/backups/';
@@ -29,6 +30,7 @@ function envFromProcess(db, extra = {}) {
     ALLOW_TEST_TOOLS: e.ALLOW_TEST_TOOLS || 'false',
     PIN_PEPPER: e.PIN_PEPPER,
     ADMIN_SETUP_TOKEN: e.ADMIN_SETUP_TOKEN,
+    STAFF_SEED_JSON: e.STAFF_SEED_JSON,
     BULK_POLICY: e.BULK_POLICY || 'all',
     LOG_TIMING: 'true',
   };
@@ -67,12 +69,15 @@ export function createApp(blob) {
         state = { ...openFile(null), etag: null };
         const env = envFromProcess(state.db);
         if (testToolsEnabled(env)) await resetTestData(env, new Request('https://localhost/api/test/reset'));
+        await applyStaffSeed(env);
       }
       return;
     }
     if (r.statusCode === 304 && state) return;
     const bytes = Buffer.from(await new Response(r.stream).arrayBuffer());
     state = { ...openFile(bytes), etag: r.blob.etag };
+    // 名簿が空なら初期名簿を登録（変更があれば、このリクエストの最後に保存される）
+    await applyStaffSeed(envFromProcess(state.db));
   }
   
   const changes = db => Number(db.db.prepare('SELECT total_changes() AS n').get().n);
