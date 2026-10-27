@@ -138,7 +138,7 @@ export function createSteps(fetchImpl) {
     expect(r.status === 200 && r.data.saved.length === 3, JSON.stringify(r.data));
     return { ms: r.ms, msg: `登録 ${r.data.saved.length}名・スキップ ${r.data.skipped.length}名` };
   });
-  step('一括勤怠申請：同じ日の重複はスキップ', async () => {
+  step('一括勤怠申請：勤務時間が重なる人はスキップ', async () => {
     const r = await POST('/api/bulk', { staffIds: ['TEST02', 'TEST03', 'TEST05'], date: day, start: '13:00', end: '17:00', breakMin: '0', task: '', allowance: '' });
     expect(r.status === 200 && r.data.saved.length === 1 && r.data.skipped.length === 2, JSON.stringify(r.data));
     return { ms: r.ms, msg: `登録 ${r.data.saved.length}名・スキップ ${r.data.skipped.length}名（${r.data.skipped[0].reason}）` };
