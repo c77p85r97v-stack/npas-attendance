@@ -18,6 +18,11 @@ import * as maint from './routes/maintenance.js';
 const ROUTES = [
   ['GET', /^\/api\/health$/, env => json({ ok: true, environment: env.ENVIRONMENT || 'development' })],
   ['GET', /^\/api\/staff$/, env => staff.listStaff(env)],
+  ['GET', /^\/api\/bootstrap$/, async env => {
+    // ログイン画面に必要なもの（名簿と設定）を1回の通信で返す
+    const staffRes = await staff.listStaff(env);
+    return json({ staff: await staffRes.json(), config: { authMode: authMode(env), environment: env.ENVIRONMENT || 'development' } });
+  }],
   ['GET', /^\/api\/config$/, env => json({ authMode: authMode(env), environment: env.ENVIRONMENT || 'development', testTools: testtools.testToolsEnabled(env), backups: !!env.BACKUPS })],
   ['POST', /^\/api\/login$/, (env, req) => staff.login(env, req)],
   ['POST', /^\/api\/logout$/, (env, req) => staff.logout(env, req)],

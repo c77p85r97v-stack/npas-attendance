@@ -488,3 +488,12 @@ test('打刻修正申請：修正後の時刻がほかの記録と重なる場�
   assert.equal((await a.post('/api/corrections', { recordId: r1.id, input: base({ start: '10:00', end: '13:30' }), reason: 'x' })).status, 409);
   assert.equal((await a.post('/api/corrections', { recordId: r1.id, input: base({ start: '09:00', end: '12:30' }), reason: 'x' })).status, 200);
 });
+
+test('ログイン画面用の一括取得（/api/bootstrap）：名簿と設定を1回で返す', async () => {
+  const env = await setup({ extra: { AUTH_MODE: 'name' } });
+  const r = await new Client(env).get('/api/bootstrap');
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.data.staff.map(s => s.id), ['S001', 'S002', 'S003', 'S005']);
+  assert.equal(r.data.config.authMode, 'name');
+  assert.ok(!JSON.stringify(r.data).includes('pin_hash'));
+});

@@ -48,9 +48,19 @@
     return r;
   }
 
+  let bootPromise = null;
+  function boot() {
+    if (!bootPromise) bootPromise = http('GET', '/api/bootstrap').catch(e => {
+      bootPromise = null;
+      throw e;
+    });
+    return bootPromise;
+  }
+
   const api = {
-    listStaff: () => http('GET', '/api/staff'),
-    config: () => http('GET', '/api/config'),
+    // ログイン画面の名簿と設定は1回の通信でまとめて受け取る（失敗したら次回やり直す）
+    listStaff: () => boot().then(b => b.staff),
+    config: () => boot().then(b => b.config),
     login: (staffId, pin) => http('POST', '/api/login', { staffId, pin }),
     logout: () => http('POST', '/api/logout', {}),
     // 本人の特定はログイン時のCookieで行う（スタッフIDはサーバー側で照合のみ）
