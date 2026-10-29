@@ -33,7 +33,7 @@ export async function submitCorrection(env, request) {
   assertSelf(u, body.staffId);
   const why = String(body.reason || '').trim();
   if (!why || why.length > REASON_MAX) throw new HttpError(400, '修正理由を1～300文字で入力してください');
-  const v = validateAttendance(body.input);
+  const v = validateAttendance(body.input, { requireTask: true });
 
   const r = await env.DB.prepare('SELECT * FROM attendance WHERE id = ? AND staff_id = ?')
     .bind(String(body.recordId || ''), u.id)

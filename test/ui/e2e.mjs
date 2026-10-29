@@ -85,11 +85,16 @@ await check('通常の勤怠申請：入力して申請 → ホームへ戻る',
   assert.match(await toastText(), /申請完了/);
   await page.waitForSelector('#home.active');
 });
-await check('通常の勤怠申請：不正な入力はサーバーのエラーメッセージを表示', async () => {
+await check('通常の勤怠申請：業務内容が空なら止め、不正な時刻はサーバーのエラーメッセージを表示', async () => {
   await page.click('[data-go="request"]');
   await page.fill('#start', '10:00');
   await page.fill('#end', '10:30');
   await page.fill('#breakMin', '30');
+  await page.fill('#task', '');
+  await page.click('#submit');
+  assert.match(await toastText(), /業務内容を入力してね/); // 業務内容は必須（画面で止める）
+  await page.waitForSelector('#toast', { state: 'hidden' });
+  await page.fill('#task', '受付');
   await page.click('#submit');
   assert.match(await toastText(), /出退勤時刻と休憩時間を確認してください/);
   assert.ok(await page.isVisible('#request.active'));

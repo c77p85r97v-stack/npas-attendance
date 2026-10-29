@@ -187,7 +187,7 @@ test('二重出勤の拒否（同時に押しても1件だけ）', async () => {
 test('出勤していない状態での退勤は拒否', async () => {
   const env = await setup();
   const a = await loginAs(env, 'S001');
-  const r = await a.post('/api/clock/out', { breakMin: 0 });
+  const r = await a.post('/api/clock/out', { task: '受付', breakMin: 0 });
   assert.equal(r.status, 400);
   assert.equal(r.data.error, '先に出勤してください');
 });
@@ -198,7 +198,7 @@ test('退勤打刻：日付をまたぐ勤務は出勤日の記録として翌�
   const a = await loginAs(env, 'S001');
   await a.post('/api/clock/in');
   now = jst(2026, 11, 1, 2, 30);
-  const co = await a.post('/api/clock/out', { breakMin: 30 });
+  const co = await a.post('/api/clock/out', { task: '受付', breakMin: 30 });
   assert.equal(co.data.workDate, '2026-10-31');
   assert.equal(co.data.hours, 4);
   assert.equal((await a.get('/api/history?month=2026-10')).data.entries[0].end, '02:30');
@@ -211,7 +211,7 @@ test('退勤打刻：24時間以上は管理者への連絡を促し、出勤状
   const a = await loginAs(env, 'S001');
   await a.post('/api/clock/in');
   now = jst(2026, 10, 6, 10, 0, 0); // ちょうど24時間
-  const r = await a.post('/api/clock/out', { breakMin: 0 });
+  const r = await a.post('/api/clock/out', { task: '受付', breakMin: 0 });
   assert.equal(r.status, 400);
   assert.equal(r.data.error, '24時間以上の勤務は管理者に連絡してください');
   assert.equal((await a.get('/api/clock/status')).data.active, true);
@@ -227,7 +227,7 @@ test('退勤打刻：24時間未満の上限（23時間59分）は受け付け�
   const a = await loginAs(env, 'S001');
   await a.post('/api/clock/in');
   now = new Date(jst(2026, 10, 6, 10, 0, 0).getTime() - 1000);
-  const r = await a.post('/api/clock/out', { breakMin: 0 });
+  const r = await a.post('/api/clock/out', { task: '受付', breakMin: 0 });
   assert.equal(r.status, 200);
   assert.equal(r.data.hours, 23.98);
 });
@@ -238,7 +238,7 @@ test('退勤打刻：入力エラーのときは保存せず、出勤状態も�
   const a = await loginAs(env, 'S001');
   await a.post('/api/clock/in');
   now = jst(2026, 10, 5, 11, 0);
-  const r = await a.post('/api/clock/out', { breakMin: 60 });
+  const r = await a.post('/api/clock/out', { task: '受付', breakMin: 60 });
   assert.equal(r.status, 400);
   assert.equal((await a.get('/api/clock/status')).data.active, true);
   assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 0);
@@ -252,12 +252,12 @@ test('退勤打刻：保存に失敗したら出勤状態を解除しない（�
   now = jst(2026, 10, 5, 15, 0);
   // 保存時に失敗するよう細工（attendance への INSERT を失敗させるトリガー）
   await env.DB.exec("CREATE TRIGGER fail_ins BEFORE INSERT ON attendance BEGIN SELECT RAISE(ABORT, 'disk error'); END;");
-  const r = await a.post('/api/clock/out', { breakMin: 0 });
+  const r = await a.post('/api/clock/out', { task: '受付', breakMin: 0 });
   assert.equal(r.status, 500);
   assert.equal((await a.get('/api/clock/status')).data.active, true);
   await env.DB.exec('DROP TRIGGER fail_ins');
   // 再試行で1件だけ保存される
-  const r2 = await a.post('/api/clock/out', { breakMin: 0 });
+  const r2 = await a.post('/api/clock/out', { task: '受付', breakMin: 0 });
   assert.equal(r2.status, 200);
   assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 1);
 });
@@ -268,14 +268,14 @@ test('退勤打刻：応答が届かず再送しても、同時に2回押して�
   const a = await loginAs(env, 'S001');
   await a.post('/api/clock/in');
   now = jst(2026, 10, 5, 15, 0);
-  const r1 = await a.post('/api/clock/out', { breakMin: 0, requestId: 'out-11111111' });
-  const r2 = await a.post('/api/clock/out', { breakMin: 0, requestId: 'out-11111111' }); // 再送
+  const r1 = await a.post('/api/clock/out', { task: '受付', breakMin: 0, requestId: 'out-11111111' });
+  const r2 = await a.post('/api/clock/out', { task: '受付', breakMin: 0, requestId: 'out-11111111' }); // 再送
   assert.equal(r2.status, 200);
   assert.equal(r2.data.id, r1.data.id);
   // 同時押し
   await a.post('/api/clock/in');
   now = jst(2026, 10, 5, 18, 0);
-  const rs = await Promise.all([1, 2, 3].map(i => a.post('/api/clock/out', { breakMin: 0, requestId: 'out-2222222' + i })));
+  const rs = await Promise.all([1, 2, 3].map(i => a.post('/api/clock/out', { task: '受付', breakMin: 0, requestId: 'out-2222222' + i })));
   assert.ok(rs.every(r => r.status === 200 || r.status === 400), JSON.stringify(rs.map(r => r.data)));
   assert.equal(await env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n'), 2);
 });
@@ -470,14 +470,14 @@ test('退勤打刻：既存の記録と重なっても保存はし、注意を�
   await a.post('/api/attendance', base({ start: '11:00', end: '12:00' }));
   await a.post('/api/clock/in');
   now = jst(2026, 10, 5, 15, 0);
-  const r = await a.post('/api/clock/out', { breakMin: 0 });
+  const r = await a.post('/api/clock/out', { task: '受付', breakMin: 0 });
   assert.equal(r.status, 200);
   assert.match(r.data.warning, /勤務時間が重なる記録が既にあります（10\/05 11:00〜12:00）/);
   assert.equal((await a.get('/api/clock/status')).data.active, false);
   // 重ならなければ注意なし
   await a.post('/api/clock/in');
   now = jst(2026, 10, 5, 17, 0);
-  assert.equal((await a.post('/api/clock/out', { breakMin: 0 })).data.warning, '');
+  assert.equal((await a.post('/api/clock/out', { task: '受付', breakMin: 0 })).data.warning, '');
 });
 
 test('打刻修正申請：修正後の時刻がほかの記録と重なる場合は止める（自分自身は除く）', async () => {
@@ -496,4 +496,42 @@ test('ログイン画面用の一括取得（/api/bootstrap）：名簿と設定
   assert.deepEqual(r.data.staff.map(s => s.id), ['S001', 'S002', 'S003', 'S005']);
   assert.equal(r.data.config.authMode, 'name');
   assert.ok(!JSON.stringify(r.data).includes('pin_hash'));
+});
+
+test('業務内容は必須：勤怠申請・一括申請・修正申請・退勤打刻で空欄（空白のみ）は拒否し、何も保存しない', async () => {
+  let now = jst(2026, 10, 5, 10, 0, 0);
+  const env = await setup({ clock: () => now });
+  const a = await loginAs(env, 'S001');
+  const count = () => env.DB.prepare('SELECT COUNT(*) AS n FROM attendance').first('n');
+  const before = await count();
+  for (const task of ['', '   ', undefined]) {
+    const r = await a.post('/api/attendance', base({ task }));
+    assert.equal(r.status, 400);
+    assert.equal(r.data.error, '業務内容を入力してください');
+  }
+  const b = await a.post('/api/bulk', { staffIds: ['S001', 'S002'], ...base({ task: '' }) });
+  assert.equal(b.status, 400);
+  assert.equal(b.data.error, '業務内容を入力してください');
+  assert.equal(await count(), before);
+
+  const rec = await a.post('/api/attendance', base());
+  assert.equal(rec.status, 200);
+  const c = await a.post('/api/corrections', { recordId: rec.data.id, input: base({ end: '16:00', task: '' }), reason: '修正' });
+  assert.equal(c.status, 400);
+  assert.equal(c.data.error, '業務内容を入力してください');
+
+  assert.equal((await a.post('/api/clock/in')).status, 200);
+  now = jst(2026, 10, 5, 18, 0, 0);
+  const co = await a.post('/api/clock/out', { breakMin: 0, task: '' });
+  assert.equal(co.status, 400);
+  assert.equal(co.data.error, '業務内容を入力してください');
+  assert.equal((await a.get('/api/clock/status')).data.active, true); // 出勤中のまま（記録は作られない）
+  assert.equal((await a.post('/api/clock/out', { breakMin: 0, task: '受付' })).status, 200);
+});
+
+test('業務内容が空欄でも、管理者による記録の追加・修正はできる（旧データの手直し用）', async () => {
+  const env = await setup();
+  const adm = await adminClient(env);
+  const r = await adm.post('/api/admin/records', { staffId: 'S001', reason: '旧データの手直し', ...base({ task: '' }) });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
 });

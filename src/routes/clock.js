@@ -60,7 +60,7 @@ export async function clockOut(env, request, now = new Date()) {
     breakMin: body.breakMin,
     task: body.task,
     allowance: body.allowance,
-  });
+  }, { requireTask: true });
 
   const id = s.session_id; // 出勤ごとに1つの記録IDに固定 → 同時に退勤しても1件だけ
   const at = nowIso(now);

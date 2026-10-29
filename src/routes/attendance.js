@@ -63,7 +63,7 @@ export async function saveAttendance(env, request) {
   const u = await requireStaff(env, request);
   const body = await readJson(request);
   assertSelf(u, body.staffId);
-  const v = validateAttendance(body);
+  const v = validateAttendance(body, { requireTask: true });
   const requestId = checkRequestId(body.requestId);
 
   const dup = await findByRequestId(env, u.id, requestId);

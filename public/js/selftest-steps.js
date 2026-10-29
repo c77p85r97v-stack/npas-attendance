@@ -139,7 +139,7 @@ export function createSteps(fetchImpl) {
     return { ms: r.ms, msg: `登録 ${r.data.saved.length}名・スキップ ${r.data.skipped.length}名` };
   });
   step('一括勤怠申請：勤務時間が重なる人はスキップ', async () => {
-    const r = await POST('/api/bulk', { staffIds: ['TEST02', 'TEST03', 'TEST05'], date: day, start: '13:00', end: '17:00', breakMin: '0', task: '', allowance: '' });
+    const r = await POST('/api/bulk', { staffIds: ['TEST02', 'TEST03', 'TEST05'], date: day, start: '13:00', end: '17:00', breakMin: '0', task: '一括テスト', allowance: '' });
     expect(r.status === 200 && r.data.saved.length === 1 && r.data.skipped.length === 2, JSON.stringify(r.data));
     return { ms: r.ms, msg: `登録 ${r.data.saved.length}名・スキップ ${r.data.skipped.length}名（${r.data.skipped[0].reason}）` };
   });
@@ -148,7 +148,7 @@ export function createSteps(fetchImpl) {
     expect(r.status === 200 && r.data.status === '申請中', JSON.stringify(r.data));
     const h = await GET('/api/history?month=' + month);
     expect(h.data.entries.find(e => e.id === recordId).end === '15:30', '承認前に記録が変わっています');
-    const dup = await POST('/api/corrections', { recordId, input: { date: day, start: '10:00', end: '17:00', breakMin: '0' }, reason: '二重' });
+    const dup = await POST('/api/corrections', { recordId, input: { date: day, start: '10:00', end: '17:00', breakMin: '0', task: '二重' }, reason: '二重' });
     expect(dup.status === 409, '審査待ちがあるのに二重に申請できました');
     return { ms: r.ms, msg: '申請中（二重申請は拒否）' };
   });

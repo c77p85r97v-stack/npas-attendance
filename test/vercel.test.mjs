@@ -84,7 +84,7 @@ test('Vercel版：初回にテスト用データが作られ、保存・再読�
   assert.ok(staff.data.some(s => s.id === 'TEST01'));
   assert.equal(blob.stats.puts, 1, JSON.stringify(blob.stats)); // 初期データを保存
   assert.equal((await c('POST', '/api/login', { staffId: 'TEST01', pin: '1234' })).status, 200);
-  assert.equal((await c('POST', '/api/attendance', { date: '2025-05-05', start: '10:00', end: '15:00', breakMin: '0' })).status, 200);
+  assert.equal((await c('POST', '/api/attendance', { date: '2025-05-05', start: '10:00', end: '15:00', breakMin: '0', task: '受付' })).status, 200);
   // 別のインスタンス（新しく起動したサーバー）からも見える
   const b = createApp(blob);
   const c2 = client([b]);
@@ -134,7 +134,7 @@ test('Vercel版：テスト記録の初期化→バックアップから復元�
   const app = createApp(blob);
   const c = client([app]);
   await c('POST', '/api/login', { staffId: 'TEST01', pin: '1234' });
-  await c('POST', '/api/attendance', { date: '2025-05-05', start: '10:00', end: '15:00', breakMin: '0' });
+  await c('POST', '/api/attendance', { date: '2025-05-05', start: '10:00', end: '15:00', breakMin: '0', task: '受付' });
   const admin = client([app]);
   await admin('POST', '/api/admin/login', { loginId: 'testadmin', password: 'test-password-1234' });
   const r = await admin('POST', '/api/admin/reset-history', { confirm: '初期化' });

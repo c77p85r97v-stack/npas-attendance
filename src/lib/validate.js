@@ -45,7 +45,7 @@ export const TASK_MAX = 200;
  * 旧 validate_ と同じ規則で入力を検証する。
  * 戻り値の allowance は空欄なら null（旧シートでは空文字）。
  */
-export function validateAttendance(input) {
+export function validateAttendance(input, { requireTask = false } = {}) {
   input = input || {};
   const date = checkDate(String(input.date || ''));
   const start = checkTime(String(input.start || ''));
@@ -61,6 +61,9 @@ export function validateAttendance(input) {
   }
   const mins = minutesBetween(start, end) - br;
   if (mins <= 0) throw new HttpError(400, '出退勤時刻と休憩時間を確認してください');
+  const task = String(input.task || '').trim().slice(0, TASK_MAX);
+  // スタッフが入力する申請では業務内容を必須にする（管理者の修正・旧データの移行は空欄も可）
+  if (requireTask && !task) throw new HttpError(400, '業務内容を入力してください');
 
   return {
     date,
@@ -68,7 +71,7 @@ export function validateAttendance(input) {
     end,
     br,
     allowance,
-    task: String(input.task || '').trim().slice(0, TASK_MAX),
+    task,
     hours: Math.round((mins / 60) * 100) / 100,
   };
 }

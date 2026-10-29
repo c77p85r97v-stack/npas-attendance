@@ -30,7 +30,7 @@ export async function saveBulk(env, request) {
   if (ids.some(id => !id) || new Set(ids).size !== ids.length) {
     throw new HttpError(400, 'スタッフの選択に重複または不正な値があります');
   }
-  const v = validateAttendance(body);
+  const v = validateAttendance(body, { requireTask: true });
 
   // 有効なスタッフかどうかを1回の問い合わせで確認
   const { results: found } = await env.DB.prepare(
