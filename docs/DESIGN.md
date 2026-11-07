@@ -12,6 +12,7 @@ Cloudflare Workers ──（バインディング DB）──► Cloudflare D1�
 
 - 画面は旧 `Index.html` をそのまま使い、通信部分（`google.script.run`）だけを `public/js/api.js` に置き換えた。
 - 本人の特定はログイン時に発行する Cookie（`npas_sid`／管理者は `npas_admin`）で行う。
+- 名前だけの方式のスタッフ（`s1.`）と管理者（`a1.`、2026-11-07〜）は、サーバーに保存しない署名付き Cookie。ログイン・ログアウトでデータベースへの書き込み（＝Vercel では Blob への保存 約1〜2秒）が起きない。管理者の Cookie にはパスワードの指紋を含め、パスワードを変えるとほかの端末のログインは無効になる（本人には新しい Cookie を渡す）。有効期限は8時間。ログアウトは Cookie を消すだけなので、コピーされた Cookie は期限まで有効な点に注意。
 
 ## 2. データベース（migrations/0001_init.sql）
 

@@ -1,6 +1,6 @@
 // 管理者用API：修正申請の承認、スタッフ・PIN管理、勤怠記録の直接修正、操作履歴
 import { json, readJson, HttpError } from '../lib/http.js';
-import { adminLogin, destroySession, clearCookie, ADMIN_COOKIE, requireAdmin, pepper } from '../lib/auth.js';
+import { adminLogin, destroySession, clearCookie, ADMIN_COOKIE, requireAdmin, pepper, signedAdminCookie } from '../lib/auth.js';
 import { hashSecret, randomPin, uuid, safeEqual, verifySecret } from '../lib/crypto.js';
 import { validateAttendance, checkMonth } from '../lib/validate.js';
 import { nowIso } from '../lib/time.js';
@@ -471,7 +471,8 @@ export async function changeOwnPassword(env, request) {
     env.DB.prepare('UPDATE admins SET password_hash = ? WHERE id = ?').bind(hash, me.id),
     auditStmt(env, { action: '管理者パスワード変更', recordId: me.id, operator: adminLabel(me) }),
   ]);
-  return json({ ok: true });
+  // 変更した本人には新しいログイン状態を渡す（ほかの端末の古いログインは使えなくなる）
+  return json({ ok: true }, 200, { 'Set-Cookie': await signedAdminCookie(env, me.id, hash) });
 }
 
 /** 出勤中のスタッフ一覧（退勤忘れの確認用）。出勤からの経過時間の長い順 */

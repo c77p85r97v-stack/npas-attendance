@@ -51,8 +51,8 @@ function unb64uText(s) {
   const b = atob(s.replace(/-/g, '+').replace(/_/g, '/'));
   return new TextDecoder().decode(Uint8Array.from(b, c => c.charCodeAt(0)));
 }
-async function hmac(env, text) {
-  const key = await crypto.subtle.importKey('raw', te.encode(pepper(env) + '\u0000staff-session'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+async function hmac(env, text, purpose = 'staff-session') {
+  const key = await crypto.subtle.importKey('raw', te.encode(pepper(env) + '\u0000' + purpose), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   return b64u(await crypto.subtle.sign('HMAC', key, te.encode(text)));
 }
 async function signedStaffCookie(env, staffId) {
@@ -74,6 +74,35 @@ async function verifySignedStaff(env, token) {
   }
 }
 
+// ---- 管理者のログイン状態：同じく「署名付き Cookie」（ログイン・ログアウトで保存が起きない）----
+// 形式：a1.<管理者ID(base64url)>.<有効期限(ミリ秒)>.<パスワードの指紋>.<署名>
+// パスワードを変えると指紋が変わり、ほかの端末に残っている古いログインは使えなくなる。
+async function passwordTag(passwordHash) {
+  return (await sha256Hex('admin-pw\u0000' + String(passwordHash))).slice(0, 16);
+}
+export async function signedAdminCookie(env, adminId, passwordHash) {
+  const exp = Date.now() + ADMIN_TTL_MS;
+  const body = `a1.${b64uText(adminId)}.${exp}.${await passwordTag(passwordHash)}`;
+  return cookieHeader(ADMIN_COOKIE, `${body}.${await hmac(env, body, 'admin-session')}`, Math.floor(ADMIN_TTL_MS / 1000));
+}
+async function verifySignedAdmin(env, token) {
+  const parts = token.split('.');
+  if (parts.length !== 5 || parts[0] !== 'a1') return null;
+  const body = parts.slice(0, 4).join('.');
+  const { safeEqual } = await import('./crypto.js');
+  if (!safeEqual(parts[4], await hmac(env, body, 'admin-session'))) return null;
+  if (!(Number(parts[2]) > Date.now())) return null;
+  let id;
+  try {
+    id = unb64uText(parts[1]);
+  } catch {
+    return null;
+  }
+  const a = await env.DB.prepare('SELECT id, login_id, name, password_hash FROM admins WHERE id = ?').bind(id).first();
+  if (!a || !safeEqual(parts[3], await passwordTag(a.password_hash))) return null;
+  return a;
+}
+
 async function createSession(env, kind, subjectId) {
   const token = randomToken();
   const now = Date.now();
@@ -91,7 +120,7 @@ async function createSession(env, kind, subjectId) {
 
 export async function destroySession(env, request, kind) {
   const token = readCookie(request, kind === 'admin' ? ADMIN_COOKIE : STAFF_COOKIE);
-  if (token && token.startsWith('s1.')) return; // 署名付き Cookie はサーバー側に保存していない（Cookie を消すだけ）
+  if (token && (token.startsWith('s1.') || token.startsWith('a1.'))) return; // 署名付き Cookie はサーバー側に保存していない（Cookie を消すだけ）
   if (token) await env.DB.prepare('DELETE FROM sessions WHERE token_hash = ?').bind(await sha256Hex(token)).run();
 }
 
@@ -104,7 +133,12 @@ function lockedMessage(kind) {
 /** 失敗回数の記録（一定回数でロック）。成功時はリセット。 */
 async function recordLoginResult(env, table, id, ok) {
   if (ok) {
-    await env.DB.prepare(`UPDATE ${table} SET failed_logins = 0, locked_until = NULL WHERE id = ?`).bind(id).run();
+    // 失敗の記録が残っているときだけ消す（何もなければ書き込まない＝保存が起きない）
+    await env.DB.prepare(
+      `UPDATE ${table} SET failed_logins = 0, locked_until = NULL WHERE id = ? AND (failed_logins <> 0 OR locked_until IS NOT NULL)`
+    )
+      .bind(id)
+      .run();
     return;
   }
   const lockUntil = nowIso(new Date(Date.now() + LOCK_MS));
@@ -187,7 +221,7 @@ export async function adminLogin(env, loginId, password) {
   const ok = await verifySecret(password, a.password_hash, pepper(env));
   await recordLoginResult(env, 'admins', a.id, ok);
   if (!ok) throw new HttpError(401, 'ログインIDまたはパスワードが正しくありません');
-  const cookie = await createSession(env, 'admin', a.id);
+  const cookie = await signedAdminCookie(env, a.id, a.password_hash);
   return { admin: { id: a.id, loginId: a.login_id, name: a.name }, cookie };
 }
 
@@ -216,7 +250,7 @@ export async function requireStaff(env, request) {
 export async function requireAdmin(env, request) {
   const token = readCookie(request, ADMIN_COOKIE);
   if (!token) throw new HttpError(401, '管理者としてログインしてください');
-  const a = await env.DB.prepare(
+  const a = token.startsWith('a1.') ? await verifySignedAdmin(env, token) : await env.DB.prepare(
     `SELECT a.id, a.login_id, a.name
        FROM sessions s JOIN admins a ON a.id = s.subject_id
       WHERE s.token_hash = ? AND s.kind = 'admin' AND s.expires_at > ?`

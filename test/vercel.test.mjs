@@ -187,3 +187,17 @@ test('Vercel版：初期名簿（STAFF_SEED_JSON）は名簿が空のときだ�
     process.env.ENVIRONMENT = saved.e;
   }
 });
+
+test('Vercel版：管理者のログイン・閲覧・ログアウトでは保存（Blob への書き込み）が起きない', async () => {
+  const blob = fakeBlob();
+  const app = createApp(blob);
+  await client([app])('GET', '/api/staff'); // 初期化（初回の保存）
+  const putsBefore = blob.stats.puts;
+  const admin = client([app]);
+  const r = await admin('POST', '/api/admin/login', { loginId: 'testadmin', password: 'test-password-1234' });
+  assert.equal(r.status, 200, JSON.stringify(r.data));
+  assert.equal((await admin('GET', '/api/admin/me')).status, 200);
+  assert.equal((await admin('GET', '/api/admin/corrections')).status, 200);
+  assert.equal((await admin('POST', '/api/admin/logout')).status, 200);
+  assert.equal(blob.stats.puts, putsBefore);
+});

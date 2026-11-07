@@ -58,10 +58,10 @@ out.push(await measure('月別履歴（1人・1か月）', () => staff.get('/api
 out.push(await measure('通常の勤怠申請（保存・重なりチェック込み）', i => staff.post('/api/attendance', { date: `2028-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`, start: '10:00', end: '15:00', breakMin: '0', task: 'bench' + i, allowance: '' })));
 out.push(await measure('出勤→退勤（2回の通信の合計）', async () => {
   await staff.post('/api/clock/in');
-  return staff.post('/api/clock/out', { breakMin: '0', task: '' }).then(r => (r.status === 400 ? { status: 200 } : r));
+  return staff.post('/api/clock/out', { breakMin: '0', task: 'bench' }).then(r => (r.status === 400 ? { status: 200 } : r));
 }));
 const ids = Array.from({ length: 100 }, (_, i) => 'S' + String(i + 1).padStart(3, '0'));
-out.push(await measure('一括勤怠申請（100名）', i => staff.post('/api/bulk', { staffIds: ids, date: `2027-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`, start: '10:00', end: '15:00', breakMin: '0' }), 10));
+out.push(await measure('一括勤怠申請（100名）', i => staff.post('/api/bulk', { staffIds: ids, date: `2027-${String((i % 12) + 1).padStart(2, '0')}-${String((i % 28) + 1).padStart(2, '0')}`, start: '10:00', end: '15:00', breakMin: '0', task: 'bench' }), 10));
 out.push(await measure('月別集計（全員・1か月）', () => admin.get('/api/admin/summary?month=2025-06')));
 out.push(await measure('月別集計CSV（全員・全月）', () => admin.get('/api/admin/summary.csv?month=all'), 5));
 out.push(await measure('自分の申請の結果', () => staff.get('/api/my/requests')));

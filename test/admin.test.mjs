@@ -467,3 +467,45 @@ test('個人別勤怠申請書のまとめ取得：学年ごと・全員、1人�
   assert.deepEqual(s001, one);
   assert.equal((await s1.get('/api/admin/personal-batch?grade=2&month=2026-10')).status, 401);
 });
+
+test('管理者ログイン・ログアウトはデータベースに書き込まない（保存が起きず速い）', async () => {
+  const env = await setup();
+  const writes = () => env.DB.prepare('SELECT total_changes() AS n').first('n');
+  const before = await writes();
+  const c = await adminClient(env);
+  assert.ok(String(c.cookies.get('npas_admin')).startsWith('a1.'), '署名付きのログイン状態');
+  assert.equal((await c.get('/api/admin/me')).status, 200);
+  assert.equal((await c.get('/api/admin/staff')).status, 200);
+  assert.equal(await writes(), before, 'ログイン〜閲覧で書き込みなし');
+  assert.equal((await c.post('/api/admin/logout')).status, 200);
+  assert.equal(await writes(), before, 'ログアウトでも書き込みなし');
+  assert.equal((await c.get('/api/admin/me')).status, 401);
+});
+
+test('管理者の署名付きログイン状態：改ざん・別の管理者へのすり替えは拒否、パスワード変更で古いログインは無効', async () => {
+  const env = await setup();
+  const c = await adminClient(env);
+  const token = c.cookies.get('npas_admin');
+  const parts = token.split('.');
+  // 署名の改ざん
+  const bad = new Client(env);
+  bad.cookies.set('npas_admin', parts.slice(0, -1).join('.') + '.AAAA');
+  assert.equal((await bad.get('/api/admin/me')).status, 401);
+  // 有効期限の書き換え（署名が合わなくなる）
+  const ext = new Client(env);
+  ext.cookies.set('npas_admin', [parts[0], parts[1], String(Number(parts[2]) + 1e9), ...parts.slice(3)].join('.'));
+  assert.equal((await ext.get('/api/admin/me')).status, 401);
+  // スタッフ用の署名付き Cookie を管理者として使うことはできない
+  const st = await loginAs(env, 'S001');
+  const fake = new Client(env);
+  fake.cookies.set('npas_admin', st.cookies.get('npas_sid'));
+  assert.equal((await fake.get('/api/admin/me')).status, 401);
+  // 別の端末のログインを用意してからパスワード変更
+  const other = await adminClient(env);
+  const ch = await c.post('/api/admin/password', { current: 'admin-password-123', password: 'new-password-4567' });
+  assert.equal(ch.status, 200, JSON.stringify(ch.data));
+  assert.equal((await c.get('/api/admin/me')).status, 200, '変更した本人はそのまま使える');
+  assert.equal((await other.get('/api/admin/me')).status, 401, 'ほかの端末の古いログインは無効になる');
+  const again = new Client(env);
+  assert.equal((await again.post('/api/admin/login', { loginId: 'admin', password: 'new-password-4567' })).status, 200);
+});
