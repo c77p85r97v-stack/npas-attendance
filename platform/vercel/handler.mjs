@@ -7,7 +7,7 @@
 //    ときだけ成功する（ETag による条件付き書き込み）。
 //  ・他のサーバーが先に更新していたら、最新のファイルを読み直して、そのリクエストを最初からやり直す。
 //    → 二重登録や更新の取りこぼしが起きない（旧仕様の LockService と同じ役割）。
-import { writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { writeFileSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { D1Node } from '../../tools/d1-node.mjs';
 import worker from '../../src/index.js';
@@ -162,16 +162,33 @@ export function createApp(blob) {
       .run(new Date().toISOString(), p.name, p.operator || '');
   }
 
+  // 保存先（Blob）の読み書きにかかった時間を記録する（遅さの原因調査用。中身は記録しない）
+  function logStore(loadMs, saveMs) {
+    if (process.env.LOG_TIMING === 'false') return;
+    let kb = 0;
+    try {
+      kb = Math.round(statSync(state.file).size / 1024);
+    } catch {}
+    console.log(`store load ${loadMs}ms${saveMs === null ? '' : ` save ${saveMs}ms`} db ${kb}KB`);
+  }
+
   async function handleOnce(makeRequest) {
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+      const t0 = Date.now();
       await load();
+      const tLoad = Date.now() - t0;
       const ctx = {};
       const res = await worker.fetch(makeRequest(), envFromProcess(state.db, { BACKUPS: backupsApi(ctx) }));
       if (ctx.pendingRestore && res.status === 200) applyRestore(ctx.pendingRestore);
       // 最後に保存した時点から変更がなければ（読み取りだけなら）保存しない
-      if (changes(state.db) === (state.saved || 0)) return res;
+      if (changes(state.db) === (state.saved || 0)) {
+        logStore(tLoad, null);
+        return res;
+      }
       try {
+        const t1 = Date.now();
         await save();
+        logStore(tLoad, Date.now() - t1);
         return res;
       } catch (e) {
         // 保存できなかった変更は捨てて、最新を読み直してやり直す
