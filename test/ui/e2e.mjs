@@ -31,14 +31,18 @@ async function check(name, fn) {
     await fn();
     results.push(['✅', name]);
   } catch (e) {
-    results.push(['❌', name, e.message.split('\n')[0]]);
+    results.push(['❌', name, e.message.replace(/\s+/g, ' ').slice(0, 300)]);
   }
 }
 const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, locale: 'ja-JP', timezoneId: 'Asia/Tokyo' });
 const page = await ctx.newPage();
 const pageErrors = [];
 page.on('pageerror', e => pageErrors.push(String(e)));
-const toastText = async () => (await page.waitForSelector('#toast', { state: 'visible' })).textContent();
+// 前のお知らせが消えかけている瞬間（空の表示）を拾わないよう、文字が入るまで待つ
+const toastText = async () => {
+  await page.waitForFunction(() => { const t = document.getElementById('toast'); return t && getComputedStyle(t).display !== 'none' && t.textContent.trim() !== ''; });
+  return page.textContent('#toast');
+};
 
 await page.goto(BASE + '/');
 await page.waitForFunction(() => !document.getElementById('grade').disabled);
@@ -72,6 +76,7 @@ await check('退勤打刻（2時間15分後）：退勤画面で休憩・内容�
   await page.waitForFunction(() => /まだ出勤していません/.test(document.getElementById('statusText').textContent));
 });
 await check('通常の勤怠申請：入力して申請 → ホームへ戻る', async () => {
+  await page.waitForSelector('#toast', { state: 'hidden' }); // 退勤のお知らせが消えるのを待つ
   await page.click('[data-go="request"]');
   await page.waitForSelector('#request.active');
   await page.fill('#start', '09:00');
@@ -82,7 +87,8 @@ await check('通常の勤怠申請：入力して申請 → ホームへ戻る',
   await page.click('#allowanceToggle');
   await page.fill('#allowance', '800');
   await page.click('#submit');
-  assert.match(await toastText(), /申請完了/);
+  const t = await toastText().catch(async e => { throw new Error('toast? ' + JSON.stringify(await page.evaluate(() => ({ t: document.getElementById('toast').textContent, d: document.getElementById('toast').style.display, scr: document.querySelector('.screen.active').id })))); });
+  assert.match(t, /申請完了/);
   await page.waitForSelector('#home.active');
 });
 await check('通常の勤怠申請：業務内容が空なら止め、不正な時刻はサーバーのエラーメッセージを表示', async () => {

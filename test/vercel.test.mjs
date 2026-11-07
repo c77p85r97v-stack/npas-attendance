@@ -108,12 +108,12 @@ test('Vercel版：3つのインスタンスに同時に書き込んでも、取�
   // 5人 × 4件の申請を同時に、さらに全員が同時に出勤を5回押す
   const results = await Promise.all(
     users.flatMap((c, i) => [
-      ...[1, 2, 3, 4].map(d => c('POST', '/api/attendance', { date: `2026-11-0${d}`, start: '10:00', end: '12:00', breakMin: '0', task: ids[i] })),
+      ...[1, 2, 3, 4].map(d => c('POST', '/api/attendance', { date: `2025-03-0${d}`, start: '10:00', end: '12:00', breakMin: '0', task: ids[i] })),
       ...[1, 2, 3, 4, 5].map(() => c('POST', '/api/clock/in', {})),
     ])
   );
   const saves = results.filter(r => r.data.workDate);
-  assert.equal(saves.length, 20, JSON.stringify(results.filter(r => r.status >= 500)));
+  assert.equal(saves.length, 20, JSON.stringify(results.filter(r => !r.data.workDate && !r.data.time && !/すでに出勤/.test(r.data.error || ''))));
   const clockOk = results.filter(r => r.data.time).length;
   assert.equal(clockOk, 5, '出勤は1人1回だけ成功');
   assert.ok(blob.stats.conflicts > 0, '同時更新の衝突が実際に起きている（やり直しで解決）');
@@ -121,7 +121,7 @@ test('Vercel版：3つのインスタンスに同時に書き込んでも、取�
   const fresh = client([createApp(blob)]);
   for (let i = 0; i < 5; i++) {
     await fresh('POST', '/api/login', { staffId: ids[i], pin: '1234' });
-    const h = await fresh('GET', '/api/history?month=2026-11');
+    const h = await fresh('GET', '/api/history?month=2025-03');
     assert.equal(h.data.entries.length, 4, `${ids[i]} の記録数`);
     assert.ok(h.data.entries.every(e => e.task === ids[i]), '他人の記録が混ざらない');
     assert.equal((await fresh('GET', '/api/clock/status')).data.active, true);
