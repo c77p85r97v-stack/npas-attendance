@@ -201,3 +201,39 @@ test('Vercel版：管理者のログイン・閲覧・ログアウトでは保�
   assert.equal((await admin('POST', '/api/admin/logout')).status, 200);
   assert.equal(blob.stats.puts, putsBefore);
 });
+
+test('名簿の追加（STAFF_ADD_JSON）：未登録のIDだけ追加・既存は変えない・2回目以降は書き込まない', async () => {
+  const blob = fakeBlob();
+  const list = [
+    { id: 'X901', name: '追加 一', nick: 'いち', grade: '3' },
+    { id: 'X902', name: '追加 二', nick: 'に', grade: 4 },
+    { id: 'TEST01', name: '上書きされてはいけない', nick: 'だめ', grade: '4' },
+    { id: 'X903', name: '学年なし', nick: 'x', grade: '' },
+  ];
+  process.env.STAFF_ADD_JSON = JSON.stringify(list);
+  try {
+    const app = createApp(blob);
+    const c = client([app]);
+    const s1 = (await c('GET', '/api/staff')).data;
+    const byId = Object.fromEntries(s1.map(s => [s.id, s]));
+    assert.equal(byId.X901.grade, '3');
+    assert.equal(byId.X902.grade, '4');
+    assert.equal(byId.X902.nick, 'に');
+    assert.ok(!byId.X903, '学年のない行は追加しない');
+    assert.notEqual(byId.TEST01.name, '上書きされてはいけない', '既存のスタッフは変えない');
+    // 別のインスタンスが読み込んでも、追加済みなので書き込みは起きない
+    const puts = blob.stats.puts;
+    const app2 = createApp(blob);
+    const s2 = (await client([app2])('GET', '/api/staff')).data;
+    assert.equal(s2.filter(s => s.id === 'X901').length, 1);
+    assert.equal(blob.stats.puts, puts);
+    // 操作履歴に1回だけ残る
+    const admin = client([app2]);
+    await admin('POST', '/api/admin/login', { loginId: 'testadmin', password: 'test-password-1234' });
+    const audit = (await admin('GET', '/api/admin/audit')).data;
+    const rows = audit.logs.filter(r => r.action === '名簿の追加');
+    assert.equal(rows.length, 1, JSON.stringify(audit).slice(0, 300));
+  } finally {
+    delete process.env.STAFF_ADD_JSON;
+  }
+});

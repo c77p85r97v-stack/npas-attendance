@@ -1,4 +1,6 @@
 // N-PAS 管理画面
+// 学年の表示：4 は「4年以上」（4年生以上をまとめた区分）
+const gradeName = g => (String(g) === '4' ? '4年以上' : `${g}年`);
 import { parseCsv, detectSheet, parseExportJson, runMigration, downloadBackup } from './migrate-client.js';
 
 const $ = id => document.getElementById(id);
@@ -184,7 +186,7 @@ async function loadStaffOptions() {
   for (const id of ['perStaff', 'recStaff']) {
     const sel = $(id);
     const cur = sel.value;
-    sel.replaceChildren(...staffCache.map(s => h('option', { value: s.id }, `${s.grade}年 ${s.name}${s.nick ? '（' + s.nick + '）' : ''}${s.active ? '' : '［無効］'}`)));
+    sel.replaceChildren(...staffCache.map(s => h('option', { value: s.id }, `${gradeName(s.grade)} ${s.name}${s.nick ? '（' + s.nick + '）' : ''}${s.active ? '' : '［無効］'}`)));
     if (cur) sel.value = cur;
   }
 }
@@ -214,7 +216,7 @@ async function loadClockedIn() {
               h(
                 'tr',
                 {},
-                h('td', {}, `${s.grade}年 ${s.name}${s.nick ? '（' + s.nick + '）' : ''}`),
+                h('td', {}, `${gradeName(s.grade)} ${s.name}${s.nick ? '（' + s.nick + '）' : ''}`),
                 h('td', { class: 'c' }, fmtDT(s.startedAt)),
                 h('td', { class: 'num' + (s.hours >= 12 ? ' error' : '') }, `${s.hours}時間${s.hours >= 12 ? ' ⚠️ 退勤忘れ？' : ''}`),
                 h('td', { class: 'c' }, h('button', { type: 'button', class: 'danger', onclick: () => cancelClock({ id: s.id, name: s.name, clockStartedAt: s.startedAt }) }, '出勤を取消'))
@@ -302,7 +304,7 @@ loaders.summary = async () => {
   });
   $('sumTable').replaceChildren(
     h('thead', {}, h('tr', {}, ['対象月', 'スタッフID', '氏名', 'ニックネーム', '学年', '勤務日数', '合計勤務時間(時間)', '合計休憩(分)', '合計手当(円)'].map(x => h('th', {}, x)))),
-    h('tbody', {}, rows.map(r => h('tr', {}, h('td', { class: 'c' }, r.month), h('td', { class: 'c' }, r.staffId), h('td', {}, r.name), h('td', {}, r.nick), h('td', { class: 'c' }, r.grade), h('td', { class: 'c' }, r.days), h('td', { class: 'num' }, hrs(r.hours)), h('td', { class: 'num' }, r.breakMin), h('td', { class: 'num' }, yen(r.allowance))))),
+    h('tbody', {}, rows.map(r => h('tr', {}, h('td', { class: 'c' }, r.month), h('td', { class: 'c' }, r.staffId), h('td', {}, r.name), h('td', {}, r.nick), h('td', { class: 'c' }, gradeName(r.grade)), h('td', { class: 'c' }, r.days), h('td', { class: 'num' }, hrs(r.hours)), h('td', { class: 'num' }, r.breakMin), h('td', { class: 'num' }, yen(r.allowance))))),
     h('tfoot', {}, h('tr', {}, h('td', { colspan: 5 }, `合計（${rows.length}名）`), h('td', { class: 'c' }, t.days), h('td', { class: 'num' }, hrs(t.hours)), h('td', { class: 'num' }, t.breakMin), h('td', { class: 'num' }, yen(t.allowance))))
   );
 };
@@ -338,7 +340,7 @@ function personalSheet(d) {
     'div',
     { class: 'sheet' },
     h('div', { class: 'title' }, h('div', { class: 'ym' }, `${y} 年 `, h('b', {}, `${m} 月`)), h('span'), h('h1', {}, '勤 怠 申 請 書')),
-    h('div', { class: 'info' }, h('div', {}, `学年：${d.staff.grade}年`), h('div', {}, `氏名：${d.staff.name}（${d.staff.nick}）`), h('div', {}, '所属：N-PAS')),
+    h('div', { class: 'info' }, h('div', {}, `学年：${gradeName(d.staff.grade)}`), h('div', {}, `氏名：${d.staff.name}（${d.staff.nick}）`), h('div', {}, '所属：N-PAS')),
     h('div', { class: 'sub' }, `勤怠データと自動連動（個人ID ${d.staff.id}）`),
     h(
       'table',
@@ -373,7 +375,7 @@ window.addEventListener('afterprint', endPrint);
 function fillGradeOptions() {
   const grades = [...new Set(staffCache.filter(s => s.active).map(s => s.grade))].sort((a, b) => Number(b) - Number(a));
   const cur = $('perGrade').value;
-  $('perGrade').replaceChildren(...grades.map(g => h('option', { value: g }, `${g}年生（${staffCache.filter(s => s.active && s.grade === g).length}名）`)), h('option', { value: 'all' }, '全員'));
+  $('perGrade').replaceChildren(...grades.map(g => h('option', { value: g }, `${String(g) === '4' ? '4年生以上' : g + '年生'}（${staffCache.filter(s => s.active && s.grade === g).length}名）`)), h('option', { value: 'all' }, '全員'));
   if (cur) $('perGrade').value = cur;
 }
 
@@ -513,7 +515,7 @@ loaders.staff = async () => {
           h('td', { class: 'c' }, s.id),
           h('td', {}, s.name),
           h('td', {}, s.nick),
-          h('td', { class: 'c' }, s.grade),
+          h('td', { class: 'c' }, gradeName(s.grade)),
           h('td', { class: 'c' }, s.active ? '有効' : '無効'),
           pinMode() ? h('td', { class: 'c' }, s.hasPin ? '設定済み' : h('span', { class: 'warn' }, '未設定')) : null,
           h('td', {}, s.locked ? h('span', { class: 'error' }, 'ロック中 ') : null, s.clockedIn ? `出勤中（${fmtDT(s.clockStartedAt)}〜）` : ''),
@@ -545,7 +547,7 @@ function staffFields(s) {
   return [
     { name: 'name', label: '氏名', value: s?.name },
     { name: 'nick', label: 'ニックネーム', value: s?.nick },
-    { name: 'grade', label: '学年', type: 'select', value: s?.grade || '1', options: [1, 2, 3, 4, 5, 6].map(n => [String(n), n + '年']) },
+    { name: 'grade', label: '学年', type: 'select', value: s?.grade || '1', options: [1, 2, 3, 4].map(n => [String(n), gradeName(n)]) },
     { name: 'active', label: '有効（オフにするとログイン画面に表示されません）', type: 'checkbox', value: s ? s.active : true },
   ];
 }

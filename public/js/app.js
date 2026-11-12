@@ -51,7 +51,7 @@ function npasOpenBulkRequest(){
   if(!sorted.length){root.textContent='スタッフ名簿が取得できていません。ログインし直してください。';return;}
   let grade='';
   sorted.forEach(u=>{
-    if(String(u.grade)!==grade){grade=String(u.grade);const h=document.createElement('div');h.textContent=grade+'年生';h.style.cssText='font-weight:bold;color:#173e68;margin:12px 0 5px';root.appendChild(h)}
+    if(String(u.grade)!==grade){grade=String(u.grade);const h=document.createElement('div');h.textContent=grade==='4'?'4年生以上':grade+'年生';h.style.cssText='font-weight:bold;color:#173e68;margin:12px 0 5px';root.appendChild(h)}
     const label=document.createElement('label');label.style.cssText='display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #edf0f4;cursor:pointer';
     const cb=document.createElement('input');cb.type='checkbox';cb.className='npas-bulk-person';cb.value=u.id;cb.style.width='20px';cb.style.height='20px';
     const span=document.createElement('span');span.textContent=u.name+(u.nick?'（'+u.nick+'）':'');
